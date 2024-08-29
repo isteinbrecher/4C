@@ -12,6 +12,7 @@
 #include "4C_beaminteraction_submodel_evaluator_beamcontact.hpp"
 
 #include "4C_beam3_base.hpp"
+#include "4C_beaminteraction_beam_to_solid_mortar_manager.hpp"
 #include "4C_beaminteraction_beam_to_solid_surface_contact_params.hpp"
 #include "4C_beaminteraction_beam_to_solid_surface_meshtying_params.hpp"
 #include "4C_beaminteraction_beam_to_solid_surface_visualization_output_params.hpp"
@@ -43,6 +44,7 @@
 #include "4C_linalg_fixedsizematrix.hpp"
 #include "4C_linalg_serialdensematrix.hpp"
 #include "4C_linalg_serialdensevector.hpp"
+#include "4C_linalg_sparsematrix.hpp"
 #include "4C_linalg_utils_densematrix_inverse.hpp"
 #include "4C_rigidsphere.hpp"
 #include "4C_so3_base.hpp"
@@ -292,6 +294,12 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::reset()
 
   // Update the geometry pair evaluation data.
   beam_interaction_conditions_ptr_->set_state(discret_ptr(), beam_interaction_data_state_ptr());
+
+  // Update the map of the lamda vector
+  // std::cout << "\nbeaminteraction reset:\n";
+  // auto indirect_assembly_manager =
+  //     Teuchos::rcp_dynamic_cast<BeamContactAssemblyManagerInDirect>(assembly_managers_[0], true);
+  // indirect_assembly_manager->get_mortar_manager()->lambda_dof_rowmap_->Print(std::cout);
 }
 
 /*----------------------------------------------------------------------*
@@ -782,6 +790,37 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::get_half_interaction_dista
   }
 }
 
+Teuchos::RCP<Epetra_Map> BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::get_lagrange_map()
+{
+  if (assembly_managers_.size() != 1) FOUR_C_THROW("Only working for single assembly manager");
+
+
+
+  auto indirect_assembly_manager =
+      Teuchos::rcp_dynamic_cast<BeamContactAssemblyManagerInDirect>(assembly_managers_[0], true);
+
+  // indirect_assembly_manager->get_mortar_manager()->lambda_dof_rowmap_->Print(std::cout);
+
+  return indirect_assembly_manager->get_mortar_manager()->lambda_dof_rowmap_;
+}
+
+void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::assemble_force(Epetra_Vector& f)
+{
+  auto indirect_assembly_manager =
+      Teuchos::rcp_dynamic_cast<BeamContactAssemblyManagerInDirect>(assembly_managers_[0], true);
+  indirect_assembly_manager->get_mortar_manager()->assemble_force(
+      g_state(), f, beam_interaction_data_state_ptr());
+};
+
+void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::assemble_stiff(
+    Core::LinAlg::SparseOperator& jac)
+{
+  auto indirect_assembly_manager =
+      Teuchos::rcp_dynamic_cast<BeamContactAssemblyManagerInDirect>(assembly_managers_[0], true);
+  indirect_assembly_manager->get_mortar_manager()->assemble_stiff(
+      g_state(), jac, beam_interaction_data_state_ptr());
+}
+
 /*----------------------------------------------------------------------------*
  *----------------------------------------------------------------------------*/
 bool BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::have_contact_type(
@@ -1034,6 +1073,15 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::create_beam_contact_elemen
   // Each indirect assembly manager depends on a beam interaction.
   beam_interaction_conditions_ptr_->create_indirect_assembly_managers(
       discret_ptr(), assembly_managers_);
+
+  // Set the lagrange multiplier vector in the data state
+  if (beam_interaction_data_state().get_lambda() == Teuchos::null)
+  {
+    auto indirect_assembly_manager =
+        Teuchos::rcp_dynamic_cast<BeamContactAssemblyManagerInDirect>(assembly_managers_[0], true);
+    beam_interaction_data_state().get_lambda() = Teuchos::rcp(new Epetra_FEVector(
+        *(indirect_assembly_manager->get_mortar_manager()->lambda_dof_rowmap_)));
+  }
 
   Core::IO::cout(Core::IO::standard)
       << "PID " << std::setw(2) << std::right << g_state().get_my_rank() << " currently monitors "

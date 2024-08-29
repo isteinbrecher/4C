@@ -168,6 +168,12 @@ namespace BEAMINTERACTION
         return beam_interaction_conditions_ptr_;
       }
 
+      Teuchos::RCP<Epetra_Map> get_lagrange_map() override;
+
+      void assemble_force(Epetra_Vector& f) override;
+
+      void assemble_stiff(Core::LinAlg::SparseOperator& jac) override;
+
       //! @}
 
      protected:

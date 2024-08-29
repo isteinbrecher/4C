@@ -570,6 +570,7 @@ void Solid::ModelEvaluator::BeamInteraction::extend_ghosting()
  *----------------------------------------------------------------------------*/
 void Solid::ModelEvaluator::BeamInteraction::reset(const Epetra_Vector& x)
 {
+  // indirect_assembly_manager->get_mortar_manager()->lambda_dof_rowmap_
   check_init_setup();
 
   // todo: somewhat illegal as of const correctness
@@ -702,6 +703,7 @@ bool Solid::ModelEvaluator::BeamInteraction::assemble_force(
 
   Core::LinAlg::assemble_my_vector(1.0, f, timefac_np, *force_beaminteraction_);
 
+  (*me_vec_ptr_)[0]->assemble_force(f);
   return true;
 }
 
@@ -714,6 +716,10 @@ bool Solid::ModelEvaluator::BeamInteraction::assemble_jacobian(
 
   Teuchos::RCP<Core::LinAlg::SparseMatrix> jac_dd_ptr = global_state().extract_displ_block(jac);
   jac_dd_ptr->add(*stiff_beaminteraction_, false, timefac_np, 1.0);
+
+  (*me_vec_ptr_)[0]->assemble_stiff(jac);
+
+
 
   // no need to keep it
   stiff_beaminteraction_->zero();
@@ -811,11 +817,38 @@ void Solid::ModelEvaluator::BeamInteraction::read_restart(Core::IO::Discretizati
   }
 }
 
+void Solid::ModelEvaluator::BeamInteraction::run_pre_compute_x(
+    const Epetra_Vector& xold, Epetra_Vector& dir_mutable, const NOX::Nln::Group& curr_grp)
+{
+  Core::LinAlg::export_to(dir_mutable, *ia_state_ptr_->get_lambda());
+};
+
 /*----------------------------------------------------------------------------*
  *----------------------------------------------------------------------------*/
 void Solid::ModelEvaluator::BeamInteraction::run_post_compute_x(
     const Epetra_Vector& xold, const Epetra_Vector& dir, const Epetra_Vector& xnew)
 {
+  // std::cout << "\nSolid::MODELEVALUATOR::BeamInteraction::run_post_compute_x  max gid of xold: "
+  //           << xold.Map().MaxAllGID();
+  // std::cout << "\nSolid::MODELEVALUATOR::BeamInteraction::run_post_compute_x  max gid of dir: "
+  //           << dir.Map().MaxAllGID();
+  // std::cout << "\nSolid::MODELEVALUATOR::BeamInteraction::run_post_compute_x  max gid of xnew: "
+  //           << xnew.Map().MaxAllGID();
+
+  // auto print_vector = Teuchos::rcp(new Epetra_Vector(*lagrange_map_));
+
+  // Core::LinAlg::export_to(xold, *print_vector);
+  // std::cout << "\nSolid::MODELEVALUATOR::BeamInteraction::run_post_compute_x  print xold:\n ";
+  // print_vector->Print(std::cout);
+
+  // Core::LinAlg::export_to(dir, *print_vector);
+  // std::cout << "\nSolid::MODELEVALUATOR::BeamInteraction::run_post_compute_x  print dir:\n ";
+  // print_vector->Print(std::cout);
+
+  // Core::LinAlg::export_to(xnew, *print_vector);
+  // std::cout << "\nSolid::MODELEVALUATOR::BeamInteraction::run_post_compute_x  print xnew:\n ";
+  // print_vector->Print(std::cout);
+
   // empty
 }
 
@@ -1055,7 +1088,7 @@ Teuchos::RCP<const Epetra_Map> Solid::ModelEvaluator::BeamInteraction::get_block
     const
 {
   check_init_setup();
-  return global_state().dof_row_map();
+  return (*me_vec_ptr_)[0]->get_lagrange_map();
 }
 
 /*----------------------------------------------------------------------------*

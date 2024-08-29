@@ -118,10 +118,7 @@ namespace Solid
 
       //! derived
       void run_pre_compute_x(const Epetra_Vector& xold, Epetra_Vector& dir_mutable,
-          const NOX::Nln::Group& curr_grp) override
-      {
-        return;
-      };
+          const NOX::Nln::Group& curr_grp) override;
 
       //! derived
       void run_post_compute_x(
