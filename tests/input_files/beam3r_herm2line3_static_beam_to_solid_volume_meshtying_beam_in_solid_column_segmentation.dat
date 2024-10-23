@@ -14,7 +14,7 @@ NUMTHERMDIS                     0
 OUTPUT_BIN                      Yes
 STRUCT_DISP                     Yes
 FILESTEPS                       1000
-VERBOSITY                       Standard
+VERBOSITY                       Verbose
 ----------------------------------------------------------IO/RUNTIME VTK OUTPUT
 OUTPUT_DATA_FORMAT              binary
 INTERVAL_STEPS                  1
@@ -38,8 +38,8 @@ RESULTSEVRY                     1
 RESTARTEVRY                     5
 NLNSOL                          fullnewton
 PREDICT                         ConstDis
-TIMESTEP                        0.1
-NUMSTEP                         10
+TIMESTEP                        0.5
+NUMSTEP                         2
 MAXTIME                         1.0
 TOLRES                          1.0E-6
 TOLDISP                         1.0E-11

@@ -339,15 +339,15 @@ void Solid::ModelEvaluator::BeamInteraction::set_sub_model_types()
   if (beampotconditions.size() > 0)
     submodeltypes_->insert(Inpar::BEAMINTERACTION::submodel_potential);
 
-  // Check if all all combinations of submodel evaluators work
-  if (Teuchos::getIntegralValue<Inpar::BEAMINTERACTION::Strategy>(
-          Global::Problem::instance()->beam_interaction_params().sublist("BEAM TO BEAM CONTACT"),
-          "STRATEGY") != Inpar::BEAMINTERACTION::bstr_none and
-      beampenaltycouplingconditions.size() > 0)
-    FOUR_C_THROW(
-        "It is not yet possible to use beam-to-beam contact in combination with beam-to-beam point "
-        "coupling because every coupling point is also interpreted as a point of contact between 2 "
-        "beams.");
+  // // Check if all all combinations of submodel evaluators work
+  // if (Teuchos::getIntegralValue<Inpar::BEAMINTERACTION::Strategy>(
+  //         Global::Problem::instance()->beam_interaction_params().sublist("BEAM TO BEAM CONTACT"),
+  //         "STRATEGY") != Inpar::BEAMINTERACTION::bstr_none and
+  //     beampenaltycouplingconditions.size() > 0)
+  //   FOUR_C_THROW(
+  //       "It is not yet possible to use beam-to-beam contact in combination with beam-to-beam
+  //       point " "coupling because every coupling point is also interpreted as a point of contact
+  //       between 2 " "beams.");
 }
 
 /*----------------------------------------------------------------------------*
@@ -427,6 +427,13 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
 {
   check_init();
 
+  // update maps of state vectors and matrices
+  update_maps();
+
+  // reset transformation
+  update_coupling_adapter_and_matrix_transformation();
+
+  return;
   // store structure discretization in vector
   std::vector<Teuchos::RCP<Core::FE::Discretization>> discret_vec(1, ia_discret_);
 
@@ -864,6 +871,14 @@ void Solid::ModelEvaluator::BeamInteraction::update_step_state(const double& tim
 void Solid::ModelEvaluator::BeamInteraction::update_step_element()
 {
   check_init_setup();
+
+  // update maps of state vectors and matrices
+  update_maps();
+
+  // reset transformation
+  update_coupling_adapter_and_matrix_transformation();
+
+  return;
 
   Vector::iterator sme_iter;
 

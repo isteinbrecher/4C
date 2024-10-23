@@ -822,8 +822,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::find_and_store_neighboring
   // Build the ids of the elements for the beam-to-solid conditions.
   beam_interaction_conditions_ptr_->build_id_sets(discret_ptr());
 
-  if (beam_interaction_params_ptr_->get_search_strategy() ==
-      Inpar::BEAMINTERACTION::SearchStrategy::bruteforce_with_binning)
+  if (false)
   {
     // loop over all row beam elements
     // note: like this we ensure that first element of pair is always a beam element, also only
@@ -866,8 +865,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::find_and_store_neighboring
       nearby_elements_map_[elegid] = neighboring_elements;
     }
   }
-  else if (beam_interaction_params_ptr_->get_search_strategy() ==
-           Inpar::BEAMINTERACTION::SearchStrategy::bounding_volume_hierarchy)
+  else if (true)
   {
     // Get vector of all beam element bounding boxes.
     int const numroweles = ele_type_map_extractor_ptr()->beam_map()->NumMyElements();

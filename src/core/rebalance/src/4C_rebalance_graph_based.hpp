@@ -19,6 +19,7 @@
 
 #include <Epetra_CrsGraph.h>
 #include <Epetra_Map.h>
+#include <Teuchos_ENull.hpp>
 #include <Teuchos_RCP.hpp>
 
 FOUR_C_NAMESPACE_OPEN
@@ -142,7 +143,8 @@ namespace Core::Rebalance
   */
   Teuchos::RCP<const Epetra_CrsGraph> build_monolithic_node_graph(
       const Core::FE::Discretization& dis,
-      const Core::GeometricSearch::GeometricSearchParams& params);
+      const Core::GeometricSearch::GeometricSearchParams& params,
+      const Teuchos::RCP<const Core::LinAlg::Vector<double>>& disp_vec = Teuchos::null);
 
 }  // namespace Core::Rebalance
 

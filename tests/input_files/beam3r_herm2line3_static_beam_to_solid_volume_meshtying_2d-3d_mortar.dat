@@ -19,7 +19,7 @@ STRUCT_DISP                           No
 STRUCT_STRESS                         no
 STRUCT_STRAIN                         no
 FILESTEPS                             1000
-VERBOSITY                             Standard
+VERBOSITY                             Verbose
 --------------------------------------------------------------STRUCTURAL DYNAMIC
 LINEAR_SOLVER                         1
 INT_STRATEGY                          Standard

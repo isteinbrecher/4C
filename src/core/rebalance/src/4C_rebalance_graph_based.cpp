@@ -27,6 +27,7 @@
 #include <Isorropia_EpetraPartitioner.hpp>
 #include <Isorropia_EpetraRedistributor.hpp>
 #include <Isorropia_Exception.hpp>
+#include <Teuchos_ENull.hpp>
 #include <Teuchos_TimeMonitor.hpp>
 
 FOUR_C_NAMESPACE_OPEN
@@ -337,7 +338,8 @@ Teuchos::RCP<const Epetra_CrsGraph> Core::Rebalance::build_graph(
 /*----------------------------------------------------------------------*/
 /*----------------------------------------------------------------------*/
 Teuchos::RCP<const Epetra_CrsGraph> Core::Rebalance::build_monolithic_node_graph(
-    const Core::FE::Discretization& dis, const Core::GeometricSearch::GeometricSearchParams& params)
+    const Core::FE::Discretization& dis, const Core::GeometricSearch::GeometricSearchParams& params,
+    const Teuchos::RCP<const Core::LinAlg::Vector<double>>& disp_vec)
 {
   // 1. Do a global geometric search
   Core::LinAlg::Vector<double> zero_vector =
@@ -346,8 +348,16 @@ Teuchos::RCP<const Epetra_CrsGraph> Core::Rebalance::build_monolithic_node_graph
   std::vector<std::pair<int, Core::GeometricSearch::BoundingVolume>> bounding_boxes;
   for (const auto* element : dis.my_row_element_range())
   {
-    bounding_boxes.emplace_back(
-        std::make_pair(element->id(), element->get_bounding_volume(dis, zero_vector, params)));
+    if (disp_vec == Teuchos::null)
+    {
+      bounding_boxes.emplace_back(
+          std::make_pair(element->id(), element->get_bounding_volume(dis, zero_vector, params)));
+    }
+    else
+    {
+      bounding_boxes.emplace_back(
+          std::make_pair(element->id(), element->get_bounding_volume(dis, *disp_vec, params)));
+    }
   }
 
   auto result = Core::GeometricSearch::global_collision_search(
@@ -367,6 +377,7 @@ Teuchos::RCP<const Epetra_CrsGraph> Core::Rebalance::build_monolithic_node_graph
       const auto* node = element->nodes()[i_node];
       node_information.SumIntoMyValue(rowele_i, i_node, node->id());
     }
+    // Todo: will this error out for hex27?
     node_information.SumIntoMyValue(rowele_i, element->num_node(), -1);
   }
 
