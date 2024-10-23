@@ -531,7 +531,19 @@ Core::FE::Discretization::build_element_row_column(
 
       // if I do not own any of the nodes, it is definitely not my element
       // and I do not ghost it
-      if (!nummine) continue;
+      if (!nummine)
+      {
+        // If all nodes of the element are in col map we still ghost it
+        bool all_nodes_in_col = true;
+        for (int j = 0; j < numnode; ++j)
+          if (!nodecolmap.MyGID(nodeids[j])) all_nodes_in_col = false;
+
+        if (all_nodes_in_col)
+        {
+          myghostele[nummyghostele++] = elegid;
+        }
+        continue;
+      }
 
       // check whether I ghost all nodes of this element
       // this is necessary to be able to own or ghost the element

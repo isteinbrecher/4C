@@ -9,7 +9,7 @@ DIM                                   3
 PROBLEMTYP                            Structure
 RESTART                               0
 ------------------------------------------------------------------------------IO
-OUTPUT_BIN                            yes
+OUTPUT_BIN                            no
 STRUCT_DISP                           yes
 FILESTEPS                             1000
 VERBOSITY                             Standard

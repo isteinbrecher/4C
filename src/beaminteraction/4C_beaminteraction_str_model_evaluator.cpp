@@ -51,6 +51,8 @@
 #include <Epetra_FEVector.h>
 #include <Teuchos_TimeMonitor.hpp>
 
+#include <thread>
+
 FOUR_C_NAMESPACE_OPEN
 
 /*----------------------------------------------------------------------------*
@@ -460,6 +462,20 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
       Core::Rebalance::rebalance_node_maps(*enriched_graph, rebalanceParams);
 
 
+  ia_discret_->get_comm().Barrier();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  std::cout << "\nNode row map:\n";
+  noderowmap->Print(std::cout);
+
+  ia_discret_->get_comm().Barrier();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+  std::cout << "\nNode col map:\n";
+  nodecolmap->Print(std::cout);
+
+  ia_discret_->get_comm().Barrier();
+
   // ia_discret_->redistribute(*noderowmap, *nodecolmap, true, false, true);
   bool assigndegreesoffreedom = true;
   bool initelements = false;
@@ -471,16 +487,44 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
   const auto& [elerowmap, elecolmap] =
       ia_discret_->build_element_row_column(*noderowmap, *nodecolmap);
 
+  ia_discret_->get_comm().Barrier();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::cout << "\nElement row map:\n";
+  elerowmap->Print(std::cout);
+
+  ia_discret_->get_comm().Barrier();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  std::cout << "\nElement col map:\n";
+  elecolmap->Print(std::cout);
+
+  ia_discret_->get_comm().Barrier();
+
   // Add the element pairs from the global search to the overlapping and non overlapping maps
   auto my_graph =
       Teuchos::make_rcp<Epetra_FECrsGraph>(Copy, *(ia_discret_->element_row_map()), 40, false);
   for (const auto& [predicate_lid, predicate_gid, primitive_lid, primitive_gid, primitive_proc] :
       result)
   {
+    // std::cout << "\nElement " << predicate_gid << " with element " << primitive_gid << " on rank
+    // "
+    //           << ia_discret_->get_comm().MyPID();
     int err = my_graph->InsertGlobalIndices(1, &predicate_gid, 1, &primitive_gid);
     if (err < 0)
       FOUR_C_THROW("Epetra_CrsGraph::InsertGlobalIndices returned %d for global row %d",
           predicate_gid, primitive_gid);
+
+    int lid_primitive = elecolmap->LID(primitive_gid);
+    if (lid_primitive < 0)
+    {
+      std::cout << "\nPredicate " << predicate_gid << " intersects with primitve " << primitive_gid
+                << " on rank " << ia_discret_->get_comm().MyPID()
+                << " but primitive is not available";
+    }
+    else
+    {
+      std::cout << "\nPredicate " << predicate_gid << " intersects with primitve " << primitive_gid
+                << " on rank " << ia_discret_->get_comm().MyPID() << " and BOTH are available";
+    }
   }
   my_graph->GlobalAssemble(true);
   my_graph->OptimizeStorage();
@@ -545,7 +589,7 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
   ia_discret_->export_row_nodes(*noderowmap, killdofs, killcond);
   ia_discret_->export_column_nodes(*nodecolmap, killdofs, killcond);
   ia_discret_->export_row_elements(*elerowmap, killdofs, killcond);
-  ia_discret_->export_column_elements(*new_column_element_map, killdofs, killcond);
+  ia_discret_->export_column_elements(*elecolmap, killdofs, killcond);
 
   // these exports have set Filled()=false as all maps are invalid now
   int err = ia_discret_->fill_complete(assigndegreesoffreedom, initelements, doboundarycondition);
