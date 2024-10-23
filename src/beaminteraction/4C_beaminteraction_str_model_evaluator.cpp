@@ -24,6 +24,8 @@
 #include "4C_coupling_adapter.hpp"
 #include "4C_coupling_adapter_converter.hpp"
 #include "4C_fem_general_utils_createdis.hpp"
+#include "4C_fem_geometric_search_bounding_volume.hpp"
+#include "4C_fem_geometric_search_distributed_tree.hpp"
 #include "4C_fem_geometry_periodic_boundingbox.hpp"
 #include "4C_global_data.hpp"
 #include "4C_inpar_beam_to_solid.hpp"
@@ -45,6 +47,7 @@
 #include "4C_structure_new_utils.hpp"
 #include "4C_utils_parameter_list.hpp"
 
+#include <Epetra_FECrsGraph.h>
 #include <Epetra_FEVector.h>
 #include <Teuchos_TimeMonitor.hpp>
 
@@ -437,14 +440,118 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
       *ia_discret_, geometric_search_params_ptr_, ia_state_ptr_->get_dis_col_np());
 
 
+  std::vector<std::pair<int, Core::GeometricSearch::BoundingVolume>> bounding_boxes;
+  for (const auto* element : ia_discret_->my_row_element_range())
+  {
+    bounding_boxes.emplace_back(std::make_pair(
+        element->id(), element->get_bounding_volume(*ia_discret_, *ia_state_ptr_->get_dis_col_np(),
+                           geometric_search_params_ptr_)));
+  }
+  auto result = Core::GeometricSearch::global_collision_search(bounding_boxes, bounding_boxes,
+      ia_discret_->get_comm(), geometric_search_params_ptr_.verbosity_);
+
+
   Teuchos::ParameterList rebalanceParams;
   rebalanceParams.set<std::string>("imbalance tol", std::to_string(1.1));
   rebalanceParams.set("partitioning method", "HYPERGRAPH");
 
 
-  const auto [rowmap, colmap] =
+  const auto [noderowmap, nodecolmap] =
       Core::Rebalance::rebalance_node_maps(*enriched_graph, rebalanceParams);
-  ia_discret_->redistribute(*rowmap, *colmap, true, false, true);
+
+
+  // ia_discret_->redistribute(*noderowmap, *nodecolmap, true, false, true);
+  bool assigndegreesoffreedom = true;
+  bool initelements = false;
+  bool doboundarycondition = true;
+  bool killdofs = true;
+  bool killcond = true;
+
+  // build the overlapping and non-overlapping element maps
+  const auto& [elerowmap, elecolmap] =
+      ia_discret_->build_element_row_column(*noderowmap, *nodecolmap);
+
+  // Add the element pairs from the global search to the overlapping and non overlapping maps
+  auto my_graph =
+      Teuchos::make_rcp<Epetra_FECrsGraph>(Copy, *(ia_discret_->element_row_map()), 40, false);
+  for (const auto& [predicate_lid, predicate_gid, primitive_lid, primitive_gid, primitive_proc] :
+      result)
+  {
+    int err = my_graph->InsertGlobalIndices(1, &predicate_gid, 1, &primitive_gid);
+    if (err < 0)
+      FOUR_C_THROW("Epetra_CrsGraph::InsertGlobalIndices returned %d for global row %d",
+          predicate_gid, primitive_gid);
+  }
+  my_graph->GlobalAssemble(true);
+  my_graph->OptimizeStorage();
+
+  Epetra_Export exporter(*ia_discret_->element_row_map(), *elerowmap);
+  auto my_graph_new = Teuchos::make_rcp<Epetra_FECrsGraph>(Copy, *(elerowmap), 40, false);
+  int err2 = my_graph_new->Export(*my_graph, exporter, Insert);
+  if (err2 != 0) FOUR_C_THROW("Export failed");
+
+  err2 = my_graph_new->FillComplete();
+  if (err2 != 0) FOUR_C_THROW("FillComplete failed");
+
+  // Loop over elements owned by this processor
+  std::set<int> new_ghost_elements;
+  for (int lid_element = 0; lid_element < elerowmap->NumMyElements(); ++lid_element)
+  {
+    int gid = elerowmap->GID(lid_element);
+    if (gid < 0) FOUR_C_THROW("GID");
+
+    int NumEntries;
+    int* colliding_elements;
+    err2 = my_graph_new->ExtractMyRowView(lid_element, NumEntries, colliding_elements);
+    if (err2 != 0) FOUR_C_THROW("ExtractMyRowView %d", err2);
+
+    for (int id_colliding = 0; id_colliding < NumEntries; ++id_colliding)
+    {
+      const int gid_colliding = colliding_elements[id_colliding];
+
+      // Check if this is in the column map
+      int lid_colliding = elecolmap->LID(gid_colliding);
+      if (lid_colliding < 0)
+      {
+        // element is not in the column map, add it.
+        new_ghost_elements.insert(gid_colliding);
+      }
+    }
+  }
+
+
+  for (const auto gid : new_ghost_elements)
+  {
+    std::cout << "\n new ghost element: " << gid << " rank " << my_graph_new->Comm().MyPID();
+  }
+
+  for (int lid_element = 0; lid_element < elecolmap->NumMyElements(); ++lid_element)
+  {
+    int gid = elecolmap->GID(lid_element);
+    if (gid < 0)
+    {
+      FOUR_C_THROW("GID");
+    }
+    new_ghost_elements.insert(gid);
+  }
+  std::vector<int> myVector(new_ghost_elements.begin(), new_ghost_elements.end());
+  Teuchos::RCP<Epetra_Map> new_column_element_map =
+      Teuchos::make_rcp<Epetra_Map>(-1, myVector.size(), myVector.data(), 0, elecolmap->Comm());
+
+
+  elerowmap->Print(std::cout);
+
+  // export nodes and elements to the new maps
+  ia_discret_->export_row_nodes(*noderowmap, killdofs, killcond);
+  ia_discret_->export_column_nodes(*nodecolmap, killdofs, killcond);
+  ia_discret_->export_row_elements(*elerowmap, killdofs, killcond);
+  ia_discret_->export_column_elements(*new_column_element_map, killdofs, killcond);
+
+  // these exports have set Filled()=false as all maps are invalid now
+  int err = ia_discret_->fill_complete(assigndegreesoffreedom, initelements, doboundarycondition);
+
+  if (err) FOUR_C_THROW("fill_complete() returned err=%d", err);
+
 
   // update maps of state vectors and matrices
   update_maps();
@@ -475,7 +582,7 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
       binstrategy_->weighted_distribution_of_bins_to_procs(discret_vec, disnp, nodesinbin, weight);
 
   // extract noderowmap because it will be called reset() after adding elements
-  Teuchos::RCP<Epetra_Map> noderowmap = Teuchos::make_rcp<Epetra_Map>(*bindis_->node_row_map());
+  Teuchos::RCP<Epetra_Map> noderowmap22 = Teuchos::make_rcp<Epetra_Map>(*bindis_->node_row_map());
   // delete old bins ( in case you partition during your simulation or after a restart)
   bindis_->delete_elements();
   binstrategy_->fill_bins_into_bin_discretization(*rowbins_);
@@ -484,7 +591,7 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
   // established in binning discretization. Therefore some nodes need to
   // change their owner according to the bins owner they reside in
   if (have_sub_model_type(Inpar::BEAMINTERACTION::submodel_crosslinking))
-    beam_crosslinker_handler_->distribute_linker_to_bins(noderowmap);
+    beam_crosslinker_handler_->distribute_linker_to_bins(noderowmap22);
 
   // determine boundary bins (physical boundary as well as boundary to other procs)
   binstrategy_->determine_boundary_row_bins();
@@ -891,15 +998,32 @@ void Solid::ModelEvaluator::BeamInteraction::update_step_element()
 {
   check_init_setup();
 
+  // submodel loop
+  Vector::iterator sme_iter;
+  bool beam_redist = check_if_beam_discret_redistribution_needs_to_be_done();
+  bool binning_redist = false;
+  for (sme_iter = me_vec_ptr_->begin(); sme_iter != me_vec_ptr_->end(); ++sme_iter)
+    binning_redist = (*sme_iter)->pre_update_step_element(beam_redist) ? true : binning_redist;
+
   // update maps of state vectors and matrices
   update_maps();
 
   // reset transformation
   update_coupling_adapter_and_matrix_transformation();
 
+
+  // submodel loop update
+  for (sme_iter = me_vec_ptr_->begin(); sme_iter != me_vec_ptr_->end(); ++sme_iter)
+    (*sme_iter)->update_step_element(binning_redist || beam_redist);
+
+  // submodel post update
+  for (sme_iter = me_vec_ptr_->begin(); sme_iter != me_vec_ptr_->end(); ++sme_iter)
+    (*sme_iter)->post_update_step_element();
+
+
   return;
 
-  Vector::iterator sme_iter;
+
 
   /* the idea is the following: redistribution of elements is only necessary if
    * one node on any proc has moved "too far" compared to the time step of the
@@ -910,12 +1034,8 @@ void Solid::ModelEvaluator::BeamInteraction::update_step_element()
    */
 
   // repartition every time
-  bool beam_redist = check_if_beam_discret_redistribution_needs_to_be_done();
 
-  // submodel loop
-  bool binning_redist = false;
-  for (sme_iter = me_vec_ptr_->begin(); sme_iter != me_vec_ptr_->end(); ++sme_iter)
-    binning_redist = (*sme_iter)->pre_update_step_element(beam_redist) ? true : binning_redist;
+
 
   if (beam_redist)
   {
@@ -1148,7 +1268,8 @@ void Solid::ModelEvaluator::BeamInteraction::update_coupling_adapter_and_matrix_
   check_init();
 
   TEUCHOS_FUNC_TIME_MONITOR(
-      "Solid::ModelEvaluator::BeamInteraction::update_coupling_adapter_and_matrix_transformation");
+      "Solid::ModelEvaluator::BeamInteraction::update_coupling_adapter_and_matrix_"
+      "transformation");
 
   // reset transformation member variables (eg. exporter) by rebuilding
   // and provide new maps for coupling adapter

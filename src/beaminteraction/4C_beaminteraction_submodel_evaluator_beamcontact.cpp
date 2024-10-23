@@ -925,8 +925,10 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::find_and_store_neighboring
     // Check if the primitives and predicates should be output
     if (geometric_search_visualization_ptr_ != Teuchos::null)
     {
-      // Output is desired, so create it right here, because we only search the pairs once per time
-      // step anyways.
+      std::cout << "\n WRITE KDOP OUTPUT\n";
+
+      // Output is desired, so create it right here, because we only search the pairs once per
+      // time step anyways.
       geometric_search_visualization_ptr_->write_primitives_and_predicates_to_disk(
           g_state().get_time_n(), g_state().get_step_n(), other_bounding_boxes,
           beam_bounding_boxes);
