@@ -462,19 +462,19 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
       Core::Rebalance::rebalance_node_maps(*enriched_graph, rebalanceParams);
 
 
-  ia_discret_->get_comm().Barrier();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // ia_discret_->get_comm().Barrier();
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  std::cout << "\nNode row map:\n";
-  noderowmap->Print(std::cout);
+  // std::cout << "\nNode row map:\n";
+  // noderowmap->Print(std::cout);
 
-  ia_discret_->get_comm().Barrier();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // ia_discret_->get_comm().Barrier();
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  std::cout << "\nNode col map:\n";
-  nodecolmap->Print(std::cout);
+  // std::cout << "\nNode col map:\n";
+  // nodecolmap->Print(std::cout);
 
-  ia_discret_->get_comm().Barrier();
+  // ia_discret_->get_comm().Barrier();
 
   // ia_discret_->redistribute(*noderowmap, *nodecolmap, true, false, true);
   bool assigndegreesoffreedom = true;
@@ -487,17 +487,17 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
   const auto& [elerowmap, elecolmap] =
       ia_discret_->build_element_row_column(*noderowmap, *nodecolmap);
 
-  ia_discret_->get_comm().Barrier();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  std::cout << "\nElement row map:\n";
-  elerowmap->Print(std::cout);
+  // ia_discret_->get_comm().Barrier();
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // std::cout << "\nElement row map:\n";
+  // elerowmap->Print(std::cout);
 
-  ia_discret_->get_comm().Barrier();
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  std::cout << "\nElement col map:\n";
-  elecolmap->Print(std::cout);
+  // ia_discret_->get_comm().Barrier();
+  // std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // std::cout << "\nElement col map:\n";
+  // elecolmap->Print(std::cout);
 
-  ia_discret_->get_comm().Barrier();
+  // ia_discret_->get_comm().Barrier();
 
   // Add the element pairs from the global search to the overlapping and non overlapping maps
   auto my_graph =
@@ -516,14 +516,16 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
     int lid_primitive = elecolmap->LID(primitive_gid);
     if (lid_primitive < 0)
     {
-      std::cout << "\nPredicate " << predicate_gid << " intersects with primitve " << primitive_gid
-                << " on rank " << ia_discret_->get_comm().MyPID()
-                << " but primitive is not available";
+      // std::cout << "\nPredicate " << predicate_gid << " intersects with primitve " <<
+      // primitive_gid
+      //           << " on rank " << ia_discret_->get_comm().MyPID()
+      //           << " but primitive is not available";
     }
     else
     {
-      std::cout << "\nPredicate " << predicate_gid << " intersects with primitve " << primitive_gid
-                << " on rank " << ia_discret_->get_comm().MyPID() << " and BOTH are available";
+      // std::cout << "\nPredicate " << predicate_gid << " intersects with primitve " <<
+      // primitive_gid
+      //           << " on rank " << ia_discret_->get_comm().MyPID() << " and BOTH are available";
     }
   }
   my_graph->GlobalAssemble(true);
@@ -566,7 +568,7 @@ void Solid::ModelEvaluator::BeamInteraction::partition_problem()
 
   for (const auto gid : new_ghost_elements)
   {
-    std::cout << "\n new ghost element: " << gid << " rank " << my_graph_new->Comm().MyPID();
+    // std::cout << "\n new ghost element: " << gid << " rank " << my_graph_new->Comm().MyPID();
   }
 
   for (int lid_element = 0; lid_element < elecolmap->NumMyElements(); ++lid_element)
@@ -916,6 +918,7 @@ void Solid::ModelEvaluator::BeamInteraction::write_restart(
     Core::IO::DiscretizationWriter& iowriter, const bool& forced_writerestart) const
 {
   check_init_setup();
+  return;
 
   int const stepn = global_state().get_step_n();
   double const timen = global_state().get_time_n();

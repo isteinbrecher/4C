@@ -57,8 +57,11 @@ WRITE_OUTPUT                          yes
 NODAL_FORCES                          yes
 SEGMENTATION                          yes
 AVERAGED_NORMALS                      yes
+---------------------------------------------------------BOUNDINGVOLUME STRATEGY
+WRITE_GEOMETRIC_SEARCH_VISUALIZATION  yes
 ----------------------------------------------------------------BEAM INTERACTION
 REPARTITIONSTRATEGY                   Everydt
+SEARCH_STRATEGY bounding_volume_hierarchy
 --------------------------------------------------------------------BEAM CONTACT
 MODELEVALUATOR                        Standard
 ----------------------------------------------------------------BINNING STRATEGY
