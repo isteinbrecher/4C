@@ -34,6 +34,7 @@
 #include "4C_linalg_serialdensevector.hpp"
 #include "4C_linalg_utils_sparse_algebra_assemble.hpp"
 #include "4C_linalg_utils_sparse_algebra_manipulation.hpp"
+#include "4C_rebalance_graph_based.hpp"
 #include "4C_rebalance_print.hpp"
 #include "4C_rigidsphere.hpp"
 #include "4C_scatra_ele.hpp"
@@ -426,6 +427,24 @@ bool Solid::ModelEvaluator::BeamInteraction::have_sub_model_type(
 void Solid::ModelEvaluator::BeamInteraction::partition_problem()
 {
   check_init();
+
+  const auto geometric_search_params_ptr_ = Core::GeometricSearch::GeometricSearchParams(
+      Global::Problem::instance()->geometric_search_params(),
+      Global::Problem::instance()->io_params());
+
+
+  Teuchos::RCP<const Epetra_CrsGraph> enriched_graph = Core::Rebalance::build_monolithic_node_graph(
+      *ia_discret_, geometric_search_params_ptr_, ia_state_ptr_->get_dis_col_np());
+
+
+  Teuchos::ParameterList rebalanceParams;
+  rebalanceParams.set<std::string>("imbalance tol", std::to_string(1.1));
+  rebalanceParams.set("partitioning method", "HYPERGRAPH");
+
+
+  const auto [rowmap, colmap] =
+      Core::Rebalance::rebalance_node_maps(*enriched_graph, rebalanceParams);
+  ia_discret_->redistribute(*rowmap, *colmap, true, false, true);
 
   // update maps of state vectors and matrices
   update_maps();

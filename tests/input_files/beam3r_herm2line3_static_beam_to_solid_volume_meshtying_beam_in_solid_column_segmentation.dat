@@ -30,6 +30,8 @@ USE_ABSOLUTE_POSITIONS          Yes
 TRIAD_VISUALIZATIONPOINT        Yes
 STRAINS_GAUSSPOINT              Yes
 MATERIAL_FORCES_GAUSSPOINT      Yes
+---------------------------------------------------------BOUNDINGVOLUME STRATEGY
+WRITE_GEOMETRIC_SEARCH_VISUALIZATION  yes
 ----------------------------------------------------------STRUCTURAL DYNAMIC
 LINEAR_SOLVER                   1
 INT_STRATEGY                    Standard
@@ -51,7 +53,8 @@ MAXITER                         20
 NAME                            Structure_Solver
 SOLVER                          UMFPACK
 ----------------------------------------------------------------BEAM INTERACTION
-REPARTITIONSTRATEGY             Everydt
+REPARTITIONSTRATEGY                   Everydt
+SEARCH_STRATEGY                       bounding_volume_hierarchy
 ----------------------------------------------------------------BEAM INTERACTION/BEAM TO SOLID VOLUME MESHTYING
 CONTACT_DISCRETIZATION          gauss_point_to_segment
 CONSTRAINT_STRATEGY             penalty
