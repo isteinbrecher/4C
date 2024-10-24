@@ -588,7 +588,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamPotential::pre_read_restart()
 /*----------------------------------------------------------------------------*
  *----------------------------------------------------------------------------*/
 void BEAMINTERACTION::SUBMODELEVALUATOR::BeamPotential::read_restart(
-    Core::IO::DiscretizationReader& ia_reader, Core::IO::DiscretizationReader& bin_reader)
+    Core::IO::DiscretizationReader& ia_reader)
 {
   // empty
 }

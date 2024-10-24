@@ -439,8 +439,8 @@ std::shared_ptr<Core::LinAlg::MultiVector<double>> Core::FE::Discretization::bui
 /*----------------------------------------------------------------------*
  *----------------------------------------------------------------------*/
 std::pair<std::shared_ptr<Epetra_Map>, std::shared_ptr<Epetra_Map>>
-Core::FE::Discretization::build_element_row_column(
-    const Epetra_Map& noderowmap, const Epetra_Map& nodecolmap) const
+Core::FE::Discretization::build_element_row_column(const Epetra_Map& noderowmap,
+    const Epetra_Map& nodecolmap, const bool find_ghost_elements_with_no_owned_node) const
 {
   const int myrank = get_comm().MyPID();
   const int numproc = get_comm().NumProc();
@@ -527,7 +527,26 @@ Core::FE::Discretization::build_element_row_column(
 
       // if I do not own any of the nodes, it is definitely not my element
       // and I do not ghost it
-      if (!nummine) continue;
+      if (find_ghost_elements_with_no_owned_node)
+      {
+        if (!nummine)
+        {
+          // If all nodes of the element are in col map we still ghost it
+          bool all_nodes_in_col = true;
+          for (int j = 0; j < numnode; ++j)
+            if (!nodecolmap.MyGID(nodeids[j])) all_nodes_in_col = false;
+
+          if (all_nodes_in_col)
+          {
+            myghostele[nummyghostele++] = elegid;
+          }
+          continue;
+        }
+      }
+      else if (!nummine)
+      {
+        continue;
+      }
 
       // check whether I ghost all nodes of this element
       // this is necessary to be able to own or ghost the element

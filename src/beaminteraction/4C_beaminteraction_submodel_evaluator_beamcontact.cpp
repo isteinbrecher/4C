@@ -631,7 +631,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::pre_read_restart()
 /*----------------------------------------------------------------------------*
  *----------------------------------------------------------------------------*/
 void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::read_restart(
-    Core::IO::DiscretizationReader& ia_reader, Core::IO::DiscretizationReader& bin_reader)
+    Core::IO::DiscretizationReader& ia_reader)
 {
   // empty
 }
@@ -809,8 +809,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::find_and_store_neighboring
   // Build the ids of the elements for the beam-to-solid conditions.
   beam_interaction_conditions_ptr_->build_id_sets(discret_ptr());
 
-  if (beam_interaction_params_ptr_->get_search_strategy() ==
-      Inpar::BEAMINTERACTION::SearchStrategy::bruteforce_with_binning)
+  if (false)
   {
     // loop over all row beam elements
     // note: like this we ensure that first element of pair is always a beam element, also only
@@ -853,8 +852,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::find_and_store_neighboring
       nearby_elements_map_[elegid] = neighboring_elements;
     }
   }
-  else if (beam_interaction_params_ptr_->get_search_strategy() ==
-           Inpar::BEAMINTERACTION::SearchStrategy::bounding_volume_hierarchy)
+  else if (true)
   {
     // Get vector of all beam element bounding boxes.
     int const numroweles = ele_type_map_extractor_ptr()->beam_map()->NumMyElements();
@@ -914,8 +912,8 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamContact::find_and_store_neighboring
     // Check if the primitives and predicates should be output
     if (geometric_search_visualization_ptr_ != nullptr)
     {
-      // Output is desired, so create it right here, because we only search the pairs once per time
-      // step anyways.
+      // Output is desired, so create it right here, because we only search the pairs once per
+      // time step anyways.
       geometric_search_visualization_ptr_->write_primitives_and_predicates_to_disk(
           g_state().get_time_n(), g_state().get_step_n(), other_bounding_boxes,
           beam_bounding_boxes);
