@@ -578,7 +578,7 @@ void BEAMINTERACTION::SUBMODELEVALUATOR::BeamPotential::reset_step_state() { che
 /*----------------------------------------------------------------------------*
  *----------------------------------------------------------------------------*/
 void BEAMINTERACTION::SUBMODELEVALUATOR::BeamPotential::write_restart(
-    Core::IO::DiscretizationWriter& ia_writer, Core::IO::DiscretizationWriter& bin_writer) const
+    Core::IO::DiscretizationWriter& ia_writer) const
 {
   // empty
 }
