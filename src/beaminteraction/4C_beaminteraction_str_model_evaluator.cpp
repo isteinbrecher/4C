@@ -858,6 +858,8 @@ void Solid::ModelEvaluator::BeamInteraction::read_restart(Core::IO::Discretizati
   //   FOUR_C_THROW("Restart step not consistent with read restart step. ");
 
 
+  update_maps();
+
   // rebuild binning
   // Do we actually need this here?
   partition_problem();
