@@ -1072,6 +1072,34 @@ void Discret::Elements::Beam3r::calc_internal_force_and_stiff(
     // compute material curvature Cur
     compute_k<T>(Psi_l, Psi_l_s, kref_gp_[numgp], Cur);
 
+    // We now add the changing reference curvature over time
+    double time = -1.0;
+    if (is_params_interface())
+      time = params_interface().get_total_time();
+    else
+      FOUR_C_THROW("Should not happen");
+
+    double angle = 0.0;
+    if (time < 2)
+    {
+      angle = M_PI * 0.5 * (1.0 - cos(time * M_PI / 2.0));
+    }
+    else
+    {
+      angle = M_PI;
+    }
+    if (time < 1e-8)
+    {
+    }
+    else
+    {
+      angle *= 0.25;
+      const double length = 0.5 * M_PI;
+      const double radius = length / angle;
+      const double kappa_0_current = 1.0 / radius;
+      Cur(2) -= kappa_0_current;
+    }
+
     // determine norm of maximal bending curvature at this GP and store in class variable if needed
     double Kmax =
         std::sqrt(Core::FADUtils::cast_to_double(Cur(1)) * Core::FADUtils::cast_to_double(Cur(1)) +
