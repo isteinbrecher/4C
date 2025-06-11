@@ -73,6 +73,37 @@ namespace GeometryPair
   }
 
   /**
+   * \brief Evaluate the 2nd derivative of the field function w.r.t xi in the element
+   */
+  template <typename ElementType, typename T, typename V, typename ScalarType>
+  inline void evaluate_position_derivative2(const T& xi,
+      const ElementData<ElementType, V>& element_data,
+      Core::LinAlg::Matrix<ElementType::spatial_dim_, ElementType::element_dim_, ScalarType>& ddr)
+  {
+    static_assert(ElementType::element_dim_ == 1,
+        "evaluate_position_derivative2 is currently only implemented for 1D elements!");
+
+    // Matrix for shape function values
+    Core::LinAlg::Matrix<ElementType::element_dim_, ElementType::n_nodes_ * ElementType::n_val_,
+        ScalarType>
+        dN(Core::LinAlg::Initialization::zero);
+
+    // Evaluate the shape function values
+    EvaluateShapeFunction<ElementType>::evaluate_deriv2(dN, xi, element_data.shape_function_data_);
+
+    // Calculate the derivative of the field function
+    ddr.clear();
+    for (unsigned int dim = 0; dim < ElementType::spatial_dim_; dim++)
+      for (unsigned int direction = 0; direction < ElementType::element_dim_; direction++)
+        for (unsigned int node = 0; node < ElementType::n_nodes_; node++)
+          for (unsigned int val = 0; val < ElementType::n_val_; val++)
+            ddr(dim, direction) += element_data.element_position_(
+                                       ElementType::spatial_dim_ * ElementType::n_val_ * node +
+                                       ElementType::spatial_dim_ * val + dim) *
+                                   dN(direction, ElementType::n_val_ * node + val);
+  }
+
+  /**
    * \brief Evaluate the geometrical normal (the one resulting from the FE approximation) on the
    * face element
    */
