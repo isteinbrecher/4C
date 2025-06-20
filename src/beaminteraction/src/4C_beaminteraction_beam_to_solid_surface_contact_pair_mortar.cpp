@@ -17,6 +17,7 @@
 #include "4C_beaminteraction_calc_utils.hpp"
 #include "4C_beaminteraction_contact_params.hpp"
 #include "4C_fem_general_extract_values.hpp"
+#include "4C_fem_general_node.hpp"
 #include "4C_geometry_pair_element.hpp"
 #include "4C_geometry_pair_element_evaluation_functions.hpp"
 #include "4C_geometry_pair_element_faces.hpp"
@@ -245,6 +246,102 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
   // If there are no intersection segments, no contact terms will be assembled.
   const unsigned int n_segments = this->line_to_3D_segments_.size();
   if (n_segments == 0) return;
+
+  // Add end point penalty terms
+  {
+    // Get beam cross-section diameter
+    const auto beam_ptr = dynamic_cast<const Discret::Elements::Beam3Base*>(this->element1());
+    const double beam_cross_section_radius =
+        beam_ptr->get_circular_cross_section_radius_for_interactions();
+
+    // Check if the beam is at the end of a filament.
+    std::array<bool, 2> is_end_node;
+    for (unsigned int i_node = 0; i_node < 2; i_node++)
+    {
+      const Core::Nodes::Node* node = this->element1()->nodes()[i_node];
+      is_end_node[i_node] = node->num_element() == 1;
+    }
+
+    for (const GeometryPair::LineSegment<ScalarType>& segment : this->line_to_3D_segments_)
+    {
+      GeometryPair::ProjectionPoint1DTo3D<ScalarType> point;
+      if (abs(segment.get_eta_a() + 1.0) < 1e-7 and is_end_node[0])
+      {
+        std::cout << "\n end node a ids: " << this->element1()->id() << " "
+                  << this->element2()->id();
+        point = segment.get_start_point();
+      }
+      else if (abs(segment.get_eta_b() - 1.0) < 1e-7 and is_end_node[1])
+      {
+        std::cout << "\n end node b ids: " << this->element1()->id() << " "
+                  << this->element2()->id();
+        point = segment.get_end_point();
+      }
+
+      // Evaluate the contact kinematics
+      const auto [_1, _2, surface_normal, gap] =
+          this->evaluate_contact_kinematics_at_projection_point(point, beam_cross_section_radius);
+
+      // Get the contact force.
+      ScalarType force =
+          penalty_force(gap, *this->params()->beam_to_solid_surface_contact_params());
+
+
+      // Get the shape function matrices.
+      Core::LinAlg::Matrix<Beam::n_dof_ + Surface::n_dof_, 1, ScalarType>
+          gap_variation_times_normal;
+      Core::LinAlg::Matrix<1, Beam::n_nodes_ * Beam::n_val_, ScalarType> N_beam;
+      Core::LinAlg::Matrix<1, Surface::n_nodes_ * Surface::n_val_, ScalarType> N_surface;
+      GeometryPair::EvaluateShapeFunction<Beam>::evaluate(
+          N_beam, point.get_eta(), this->ele1pos_.shape_function_data_);
+      GeometryPair::EvaluateShapeFunction<Surface>::evaluate(N_surface, point.get_xi(),
+          this->face_element_->get_face_element_data().shape_function_data_);
+
+      // Calculate the variation of the gap function multiplied with the surface normal vector.
+      for (unsigned int i_shape = 0; i_shape < N_beam.num_cols(); i_shape++)
+      {
+        for (unsigned int i_dim = 0; i_dim < 3; i_dim++)
+        {
+          gap_variation_times_normal(i_shape * 3 + i_dim) = N_beam(i_shape) * surface_normal(i_dim);
+        }
+      }
+      for (unsigned int i_shape = 0; i_shape < N_surface.num_cols(); i_shape++)
+      {
+        for (unsigned int i_dim = 0; i_dim < 3; i_dim++)
+        {
+          gap_variation_times_normal(N_beam.num_cols() * 3 + i_shape * 3 + i_dim) =
+              -1.0 * N_surface(i_shape) * surface_normal(i_dim);
+        }
+      }
+
+      // Add the Gauss point contributions to the pair force vector.
+      Core::LinAlg::Matrix<Beam::n_dof_ + Surface::n_dof_, 1, ScalarType> pair_force_vector;
+      gap_variation_times_normal.scale(force);
+      pair_force_vector -= gap_variation_times_normal;
+
+      // GIDs of the pair and the force vector acting on the pair.
+      const auto pair_gid = get_beam_to_surface_pair_gid_combined<Beam>(
+          discret, *this->element1(), *this->face_element_);
+
+      // If given, assemble force terms into the global vector.
+      if (force_vector != nullptr)
+      {
+        std::vector<double> force_pair_double(pair_gid.size(), 0.0);
+        for (unsigned int j_dof = 0; j_dof < pair_force_vector.num_rows(); j_dof++)
+          force_pair_double[j_dof] = Core::FADUtils::cast_to_double(pair_force_vector(j_dof));
+        force_vector->SumIntoGlobalValues(
+            pair_gid.size(), pair_gid.data(), force_pair_double.data());
+      }
+
+      // If given, assemble force terms into the global stiffness matrix.
+      if (stiffness_matrix != nullptr)
+        for (unsigned int i_dof = 0; i_dof < pair_force_vector.num_rows(); i_dof++)
+          for (unsigned int j_dof = 0; j_dof < pair_gid.size(); j_dof++)
+            stiffness_matrix->fe_assemble(
+                Core::FADUtils::cast_to_double(pair_force_vector(i_dof).dx(j_dof)), pair_gid[i_dof],
+                pair_gid[j_dof]);
+    }
+  }
 
   // This pair only gives contributions to the stiffness matrix
   if (stiffness_matrix == nullptr) return;
