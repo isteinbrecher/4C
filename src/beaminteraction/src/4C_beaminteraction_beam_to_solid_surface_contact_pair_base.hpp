@@ -15,6 +15,7 @@
 #include "4C_beaminteraction_beam_to_solid_pair_base.hpp"
 #include "4C_linalg_fixedsizematrix.hpp"
 #include "4C_linalg_sparsematrix.hpp"
+#include "4C_shell_kl_nurbs_geometry_pair.hpp"
 
 FOUR_C_NAMESPACE_OPEN
 

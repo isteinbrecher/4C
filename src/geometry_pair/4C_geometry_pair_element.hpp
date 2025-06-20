@@ -466,8 +466,13 @@ namespace GeometryPair
   /**
    * \brief Data container warping everything required to evaluate field functions on the elements
    */
+  template <typename ElementType, typename ScalarType>
+  struct OptionalElementData
+  {
+  };
+
   template <typename ElementType, typename ScalarType, typename Enable = void>
-  struct ElementData
+  struct ElementData : OptionalElementData<ElementType, ScalarType>
   {
     Core::LinAlg::Matrix<ElementType::n_dof_, 1, ScalarType> element_position_;
     ShapeFunctionData<ElementType> shape_function_data_;
@@ -490,12 +495,21 @@ namespace GeometryPair
    * \brief Struct to initialize element data containers with the correct shape function data
    */
   template <typename ElementType, typename ScalarType>
+  struct InitializeOptionalElementData
+  {
+    static void initialize(GeometryPair::ElementData<ElementType, ScalarType> element_data,
+        const Core::Elements::Element* element)
+    {
+    }
+  };
+  template <typename ElementType, typename ScalarType>
   struct InitializeElementData
   {
     static GeometryPair::ElementData<ElementType, ScalarType> initialize(
         const Core::Elements::Element* element)
     {
       GeometryPair::ElementData<ElementType, ScalarType> element_data;
+      InitializeOptionalElementData<ElementType, ScalarType>::initialize(element_data, element);
       SetShapeFunctionData<ElementType>::set(element_data.shape_function_data_, element);
       return element_data;
     }
@@ -505,6 +519,14 @@ namespace GeometryPair
    * \brief Struct to convert a FAD element data container to an element data container of
    * type double
    */
+  template <typename ElementType, typename ScalarType>
+  struct OptionalElementDataToDouble
+  {
+    static void to_double(GeometryPair::ElementData<ElementType, double>& element_data_double,
+        const GeometryPair::ElementData<ElementType, ScalarType>& element_data)
+    {
+    }
+  };
   template <typename ElementType, typename Enable = void>
   struct ElementDataToDouble
   {
@@ -513,6 +535,8 @@ namespace GeometryPair
         const GeometryPair::ElementData<ElementType, ScalarType>& element_data)
     {
       auto element_data_double = ElementData<ElementType, double>();
+      OptionalElementDataToDouble<ElementType, ScalarType>::to_double(
+          element_data_double, element_data);
       element_data_double.shape_function_data_ = element_data.shape_function_data_;
       element_data_double.element_position_ =
           Core::FADUtils::cast_to_double(element_data.element_position_);
@@ -532,6 +556,8 @@ namespace GeometryPair
         const GeometryPair::ElementData<ElementType, ScalarType>& element_data)
     {
       auto element_data_double = ElementData<ElementType, double>();
+      OptionalElementDataToDouble<ElementType, ScalarType>::to_double(
+          element_data_double, element_data);
       element_data_double.shape_function_data_ = element_data.shape_function_data_;
       element_data_double.element_position_ =
           Core::FADUtils::cast_to_double(element_data.element_position_);

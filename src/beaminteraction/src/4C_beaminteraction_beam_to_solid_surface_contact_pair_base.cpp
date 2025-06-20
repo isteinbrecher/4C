@@ -248,7 +248,23 @@ BeamInteraction::BeamToSolidSurfaceContactPairBase<ScalarType, Beam, Surface>::
   Core::LinAlg::Matrix<3, 1, ScalarType> r_rel;
   r_rel = r_beam;
   r_rel -= r_surface;
-  ScalarType gap = r_rel.dot(surface_normal) - beam_cross_section_radius;
+  ScalarType gap = r_rel.dot(surface_normal);
+  if constexpr (std::is_same<Surface, GeometryPair::t_nurbs9>::value)
+  {
+    if (this->face_element_->get_face_element_data().is_shell_)
+    {
+      if (gap < 0)
+      {
+        // In this case we switch the normal direction, because the contact is happening on the
+        // "negative" side of the face.
+        surface_normal.scale(-1.0);
+        gap *= -1.0;
+      }
+      const auto shell_thickness = this->face_element_->get_face_element_data().shell_thickness_;
+      gap -= 0.5 * shell_thickness;
+    }
+  }
+  gap -= beam_cross_section_radius;
 
   return {r_beam, r_surface, surface_normal, gap};
 }
