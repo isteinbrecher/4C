@@ -33,11 +33,11 @@ FOUR_C_NAMESPACE_OPEN
  */
 template <typename ScalarType>
 ScalarType BeamInteraction::penalty_force(
-    const ScalarType& gap, const BeamToSolidSurfaceContactParams& contact_params)
+    const ScalarType& gap, const BeamToSolidSurfaceContactParams& contact_params, double factor)
 {
   const Inpar::BeamToSolid::BeamToSolidSurfaceContactPenaltyLaw penalty_law =
       contact_params.get_penalty_law();
-  const double penalty_parameter = contact_params.get_penalty_parameter();
+  const double penalty_parameter = factor * contact_params.get_penalty_parameter();
 
   ScalarType penalty_force = 0.0;
 
@@ -844,10 +844,10 @@ namespace BeamInteraction
   using line_to_surface_patch_scalar_type_fixed_size_hermite_nurbs_9 =
       line_to_surface_patch_scalar_type_fixed_size<t_hermite, t_nurbs9>;
 
-#define initialize_template_penalty(scalar_type)                   \
-  template scalar_type penalty_force<scalar_type>(                 \
-      const scalar_type&, const BeamToSolidSurfaceContactParams&); \
-  template scalar_type penalty_potential<scalar_type>(             \
+#define initialize_template_penalty(scalar_type)                           \
+  template scalar_type penalty_force<scalar_type>(                         \
+      const scalar_type&, const BeamToSolidSurfaceContactParams&, double); \
+  template scalar_type penalty_potential<scalar_type>(                     \
       const scalar_type&, const BeamToSolidSurfaceContactParams&);
 
   initialize_template_penalty(double);

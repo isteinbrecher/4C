@@ -78,8 +78,8 @@ namespace BeamInteraction
    * @return Penalty force.
    */
   template <typename ScalarType>
-  ScalarType penalty_force(
-      const ScalarType& gap, const BeamToSolidSurfaceContactParams& contact_params);
+  ScalarType penalty_force(const ScalarType& gap,
+      const BeamToSolidSurfaceContactParams& contact_params, double factor = 1.0);
 
   /**
    * \brief Evaluate the penalty potential depending on the gap function.

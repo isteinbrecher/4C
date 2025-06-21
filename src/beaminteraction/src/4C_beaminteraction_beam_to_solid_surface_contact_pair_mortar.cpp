@@ -283,8 +283,8 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
           this->evaluate_contact_kinematics_at_projection_point(point, beam_cross_section_radius);
 
       // Get the contact force.
-      ScalarType force =
-          penalty_force(gap, *this->params()->beam_to_solid_surface_contact_params());
+      ScalarType force = penalty_force(
+          gap, *this->params()->beam_to_solid_surface_contact_params(), beam_cross_section_radius);
 
 
       // Get the shape function matrices.
