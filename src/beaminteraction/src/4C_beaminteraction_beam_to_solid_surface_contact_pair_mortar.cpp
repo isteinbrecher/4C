@@ -68,6 +68,19 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
   const unsigned int n_segments = this->line_to_3D_segments_.size();
   if (n_segments == 0) return;
 
+
+  if (n_segments > 1) FOUR_C_THROW("only one segment at the moment");
+
+  // Check if the beam is at the end of a filament.
+  std::array<bool, 2> is_end_node;
+  for (unsigned int i_node = 0; i_node < 2; i_node++)
+  {
+    const Core::Nodes::Node* node = this->element1()->nodes()[i_node];
+    is_end_node[i_node] = node->num_element() == 1;
+  }
+  if (is_end_node[0] and is_end_node[1]) FOUR_C_THROW("only one endpoint possible");
+
+
   // Pointer to the contact parameters and input parameters
   const auto contact_parameters = this->params()->beam_to_solid_surface_contact_params();
   const auto contact_defined_on =
@@ -126,6 +139,28 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
           N_beam, eta, this->ele1pos_.shape_function_data_);
       GeometryPair::evaluate_shape_function_matrix<Surface>(
           N_surface, xi, this->face_element_->get_face_element_data().shape_function_data_);
+
+      // Modify shape functions if applicable
+      if (is_end_node[0])
+      {
+        ScalarType tmp = N_lambda(0);
+        N_lambda(0) = 0.0;
+        N_lambda(1) += tmp;
+
+        tmp = N_lambda_trial(0);
+        N_lambda_trial(0) = 0.0;
+        N_lambda_trial(1) += tmp;
+      }
+      else if (is_end_node[1])
+      {
+        ScalarType tmp = N_lambda(1);
+        N_lambda(1) = 0.0;
+        N_lambda(0) += tmp;
+
+        tmp = N_lambda_trial(1);
+        N_lambda_trial(1) = 0.0;
+        N_lambda_trial(0) += tmp;
+      }
 
       // Weighted gap
       constraint_vector.update_t(gauss_factor * gap, N_lambda_trial, 1.0);
@@ -223,6 +258,18 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
   global_kappa.SumIntoGlobalValues(
       lambda_gid_pos.size(), lambda_gid_pos.data(), kappa_double.data());
   kappa_double.put_scalar(1.0);
+
+
+  // Modify shape functions if applicable
+  if (is_end_node[0])
+  {
+    kappa_double(0) = 0.0;
+  }
+  else if (is_end_node[1])
+  {
+    kappa_double(1) = 0.0;
+  }
+
   global_lambda_active.SumIntoGlobalValues(
       lambda_gid_pos.size(), lambda_gid_pos.data(), kappa_double.data());
 }
@@ -260,6 +307,7 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
     {
       const Core::Nodes::Node* node = this->element1()->nodes()[i_node];
       is_end_node[i_node] = node->num_element() == 1;
+      is_end_node[i_node] = false;
     }
 
     for (const GeometryPair::LineSegment<ScalarType>& segment : this->line_to_3D_segments_)
@@ -283,8 +331,8 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
           this->evaluate_contact_kinematics_at_projection_point(point, beam_cross_section_radius);
 
       // Get the contact force.
-      ScalarType force = penalty_force(
-          gap, *this->params()->beam_to_solid_surface_contact_params(), beam_cross_section_radius);
+      ScalarType force = penalty_force(gap, *this->params()->beam_to_solid_surface_contact_params(),
+          2 * beam_cross_section_radius);
 
 
       // Get the shape function matrices.
@@ -476,6 +524,16 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
         pair_cell_solid_id = &(visualization_data.get_cell_data<int>("uid_1_pair_solid_id"));
       }
 
+      // Check if the beam is at the end of a filament.
+      std::array<bool, 2> is_end_node;
+      for (unsigned int i_node = 0; i_node < 2; i_node++)
+      {
+        const Core::Nodes::Node* node = this->element1()->nodes()[i_node];
+        is_end_node[i_node] = node->num_element() == 1;
+      }
+      if (is_end_node[0] and is_end_node[1]) FOUR_C_THROW("only one endpoint possible");
+
+
       for (const auto& segment : this->line_to_3D_segments_)
       {
         for (const auto& point : segment.get_all_segment_points())
@@ -489,8 +547,43 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
           u = r_beam;
           u -= r0_beam;
 
+          Core::LinAlg::Matrix<Mortar::spatial_dim_, Mortar::n_dof_, ScalarType> N_lambda;
+          GeometryPair::evaluate_shape_function_matrix<Mortar>(N_lambda, point.get_eta());
+
           // Get the Lagrange multiplier value
-          GeometryPair::evaluate_position<Mortar>(point.get_eta(), q_lambda, lambda_scalar);
+          // GeometryPair::evaluate_position<Mortar>(point.get_eta(), q_lambda, lambda_scalar);
+
+          // r.clear();
+          // for (unsigned int node = 0; node < ElementType::n_nodes_; node++)
+          //   for (unsigned int dim = 0; dim < ElementType::spatial_dim_; dim++)
+          //     for (unsigned int val = 0; val < ElementType::n_val_; val++)
+          //       r(dim) += element_data.element_position_(
+          //                     ElementType::spatial_dim_ * ElementType::n_val_ * node +
+          //                     ElementType::spatial_dim_ * val + dim) *
+          //                 N(ElementType::n_val_ * node + val);
+
+          if (is_end_node[0])
+          {
+            ScalarType tmp = N_lambda(0);
+            N_lambda(0) = 0.0;
+            N_lambda(1) += tmp;
+
+            // tmp = N_lambda_trial(0);
+            // N_lambda_trial(0) = 0.0;
+            // N_lambda_trial(1) += tmp;
+          }
+          else if (is_end_node[1])
+          {
+            ScalarType tmp = N_lambda(1);
+            N_lambda(1) = 0.0;
+            N_lambda(0) += tmp;
+
+            // tmp = N_lambda_trial(1);
+            // N_lambda_trial(1) = 0.0;
+            // N_lambda_trial(0) += tmp;
+          }
+
+          lambda_scalar.multiply_nn(N_lambda, q_lambda.element_position_);
 
           // Add to output data.
           lambda_vis.push_back(Core::FADUtils::cast_to_double(lambda_scalar(0)));

@@ -48,6 +48,11 @@ int Discret::Elements::KirchhoffLoveShellNurbs::evaluate(Teuchos::ParameterList&
 
   switch (act)
   {
+    case Core::Elements::struct_calc_reset_istep:
+    {
+      // not necessary since no class variables are modified in predicting steps
+      break;
+    }
     // Calculate the residuum and/or tangent stiffness matrix
     case Core::Elements::struct_calc_internalforce:
     case Core::Elements::struct_calc_nlnstiff:
