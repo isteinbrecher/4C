@@ -55,6 +55,20 @@ void BeamInteraction::BeamToSolidSurfaceContactPairBase<ScalarType, Beam, Solid>
   for (unsigned int i = 0; i < Beam::n_dof_; i++)
     this->ele1pos_.element_position_(i) = Core::FADUtils::HigherOrderFadValue<ScalarType>::apply(
         Beam::n_dof_ + n_patch_dof, i, beam_centerline_dofvec[i]);
+
+  // Nodes 0 and 1 are the edge nodes
+  using mein_type = typename Core::FADUtils::HigherOrderFadType<1,
+      Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + Beam::n_dof_>>::type;
+  for (int i_node = 0; i_node < 2; i_node++)
+  {
+    for (int i_dof = 0; i_dof < 3; i_dof++)
+    {
+      edge_position_.element_position_(3 * i_node + i_dof) =
+          Core::FADUtils::HigherOrderFadValue<mein_type>::apply(
+              GeometryPair::t_line2::n_dof_ + Beam::n_dof_, Beam::n_dof_ + 3 * i_node + i_dof,
+              solid_nodal_dofvec[3 * i_node + i_dof]);
+    }
+  }
 }
 
 /**

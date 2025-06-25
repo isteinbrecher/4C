@@ -833,6 +833,14 @@ namespace BeamInteraction
 {
   using namespace GeometryPair;
 
+  template typename Core::FADUtils::HigherOrderFadType<1,
+      Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type
+  penalty_force<typename Core::FADUtils::HigherOrderFadType<1,
+      Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type>(
+      const typename Core::FADUtils::HigherOrderFadType<1,
+          Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type&,
+      const BeamToSolidSurfaceContactParams&, double);
+
   // Helper types for the macro initialization. The compiler has troubles inserting the templated
   // typenames into the macros.
   using line_to_surface_patch_scalar_type_fixed_size_1st_order_line2_nurbs_9 =

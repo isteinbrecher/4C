@@ -152,6 +152,11 @@ namespace BeamInteraction
     //! Pointer to the face element object which manages the positions on the surface, including the
     //! averaged nodal normals.
     std::shared_ptr<GeometryPair::FaceElementTemplate<Surface, ScalarType>> face_element_;
+
+    GeometryPair::ElementData<GeometryPair::t_line2,
+        typename Core::FADUtils::HigherOrderFadType<1,
+            Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + Beam::n_dof_>>::type>
+        edge_position_;
   };
 }  // namespace BeamInteraction
 

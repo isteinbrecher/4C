@@ -76,9 +76,15 @@ void GeometryPair::line_to_line_closest_point_projection(
                Core::FADUtils::vector_norm(delta_eta) < Constants::projection_xi_eta_tol)
       {
         if (valid_parameter_1d(eta_a) && valid_parameter_1d(eta_b))
+        {
           projection_result = ProjectionResult::projection_found_valid;
+          // std::cout << "\n valid";
+        }
         else
+        {
           projection_result = ProjectionResult::projection_found_not_valid;
+          // std::cout << "\n found not valid";
+        }
         break;
       }
 
@@ -97,8 +103,12 @@ void GeometryPair::line_to_line_closest_point_projection(
         counter++;
       }
       else
+      {
+        // std::cout << "\n singular";
         break;
+      }
     }
+    // std::cout << "\nCPP took " << counter << " iterations";
   }
 }
 
@@ -111,6 +121,24 @@ namespace GeometryPair
   template void line_to_line_closest_point_projection<double, t_hermite, t_line2>(
       const ElementData<t_hermite, double>&, const ElementData<t_line2, double>&, double&, double&,
       ProjectionResult&, const bool);
+
+  template void line_to_line_closest_point_projection<
+      typename Core::FADUtils::HigherOrderFadType<1,
+          Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type,
+      t_hermite, t_line2>(const ElementData<t_hermite,
+                              typename Core::FADUtils::HigherOrderFadType<1,
+                                  Sacado::ELRFad::SLFad<double,
+                                      GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type>&,
+      const ElementData<t_line2, typename Core::FADUtils::HigherOrderFadType<1,
+                                     Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ +
+                                                                       t_hermite::n_dof_>>::type>&,
+      typename Core::FADUtils::HigherOrderFadType<1,
+          Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type&,
+      typename Core::FADUtils::HigherOrderFadType<1,
+          Sacado::ELRFad::SLFad<double, GeometryPair::t_line2::n_dof_ + t_hermite::n_dof_>>::type&,
+      ProjectionResult&, const bool);
+
+
 }  // namespace GeometryPair
 
 FOUR_C_NAMESPACE_CLOSE
