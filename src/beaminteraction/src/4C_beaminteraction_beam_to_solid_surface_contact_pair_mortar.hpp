@@ -109,6 +109,20 @@ namespace BeamInteraction
     //! vector multiplied with the shape function matrix of the Lagrange multipliers
     Core::LinAlg::Matrix<Surface::n_dof_, Mortar::n_dof_, ScalarType>
         surface_shape_times_normal_times_lambda_shape_;
+
+    bool is_endpoint_ = false;
+    Core::LinAlg::Matrix<3, 1, double> endpoint_reference_;
+    Core::LinAlg::Matrix<3, 1, double> endpoint_displacement_;
+    Core::LinAlg::Matrix<3, 1, double> endpoint_force_;
+    Core::LinAlg::Matrix<3, 1, double> endpoint_normal_;
+    double endpoint_gap_;
+
+    bool is_edge_to_edge_ = false;
+    Core::LinAlg::Matrix<3, 1, double> edge_to_edge_reference_;
+    Core::LinAlg::Matrix<3, 1, double> edge_to_edge_displacement_;
+    Core::LinAlg::Matrix<3, 1, double> edge_to_edge_force_;
+    Core::LinAlg::Matrix<3, 1, double> edge_to_edge_normal_;
+    double edge_to_edge_gap_;
   };
 
   /**

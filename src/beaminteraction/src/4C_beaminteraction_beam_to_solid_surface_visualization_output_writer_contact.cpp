@@ -56,6 +56,30 @@ BeamInteraction::BeamToSolidSurfaceVisualizationOutputWriterContact::
   // fields that should be output eventually have to be defined here. This helps to prevent issues
   // with ranks that do not contribute to a certain writer.
   {
+    {
+      std::shared_ptr<BeamInteraction::BeamToSolidOutputWriterVisualization> visualization_writer =
+          output_writer_base_ptr_->add_visualization_writer(
+              "end-point-forces", "btss-contact-end-point-forces");
+      auto& visualization_data = visualization_writer->get_visualization_data();
+      visualization_data.register_point_data<double>("displacement", 3);
+      visualization_data.register_point_data<double>("force_beam", 3);
+      visualization_data.register_point_data<double>("normal", 3);
+      visualization_data.register_point_data<double>("gap", 1);
+      // if (write_unique_ids) visualization_data.register_point_data<int>("uid_0_node_id", 1);
+    }
+
+    {
+      std::shared_ptr<BeamInteraction::BeamToSolidOutputWriterVisualization> visualization_writer =
+          output_writer_base_ptr_->add_visualization_writer(
+              "edge-to-edge-forces", "btss-contact-edge-to-edge-forces");
+      auto& visualization_data = visualization_writer->get_visualization_data();
+      visualization_data.register_point_data<double>("displacement", 3);
+      visualization_data.register_point_data<double>("force_beam", 3);
+      visualization_data.register_point_data<double>("normal", 3);
+      visualization_data.register_point_data<double>("gap", 1);
+      // if (write_unique_ids) visualization_data.register_point_data<int>("uid_0_node_id", 1);
+    }
+
     if (output_params_ptr_->get_nodal_force_output_flag())
     {
       std::shared_ptr<BeamInteraction::BeamToSolidOutputWriterVisualization> visualization_writer =

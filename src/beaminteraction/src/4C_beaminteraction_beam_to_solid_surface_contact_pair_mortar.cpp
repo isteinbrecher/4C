@@ -33,6 +33,8 @@
 
 #include <Epetra_FEVector.h>
 
+#include <filesystem>
+
 
 FOUR_C_NAMESPACE_OPEN
 
@@ -288,6 +290,8 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
     const Core::LinAlg::Vector<double>& global_lambda,
     const Core::LinAlg::Vector<double>& displacement_vector)
 {
+  is_edge_to_edge_ = false;
+  is_endpoint_ = false;
   {  // Add line penalty terms
 
 
@@ -397,6 +401,18 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
       // std::cout << "\n node2 " << ele->nodes()[1]->x()[1];
       // std::cout << "\n node2 " << ele->nodes()[1]->x()[2];
 
+      is_edge_to_edge_ = true;
+      GeometryPair::evaluate_position(Core::FADUtils::cast_to_double(eta_a),
+          GeometryPair::ElementDataToDouble<Beam>::to_double(this->ele1posref_),
+          edge_to_edge_reference_);
+      GeometryPair::evaluate_position(Core::FADUtils::cast_to_double(eta_a),
+          GeometryPair::ElementDataToDouble<Beam>::to_double(this->ele1pos_),
+          edge_to_edge_displacement_);
+      edge_to_edge_displacement_ -= edge_to_edge_reference_;
+      edge_to_edge_gap_ = Core::FADUtils::cast_to_double(gap);
+      edge_to_edge_force_ = Core::FADUtils::cast_to_double(force_vec);
+      edge_to_edge_normal_ = Core::FADUtils::cast_to_double(diff);
+      edge_to_edge_normal_.scale(edge_to_edge_normal_.norm2());
 
 
       // GIDs of the pair and the force vector acting on the pair.
@@ -417,7 +433,7 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
       if (stiffness_matrix != nullptr)
         for (unsigned int i_dof = 0; i_dof < pair_force_vector.num_rows(); i_dof++)
           for (unsigned int j_dof = 0; j_dof < Beam::n_dof_ + GeometryPair::t_line2::n_dof_;
-               j_dof++)
+              j_dof++)
             stiffness_matrix->fe_assemble(
                 Core::FADUtils::cast_to_double(pair_force_vector(i_dof).dx(j_dof)), pair_gid[i_dof],
                 pair_gid[j_dof]);
@@ -484,7 +500,19 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
       ScalarType force = penalty_force(gap, *this->params()->beam_to_solid_surface_contact_params(),
           2 * beam_cross_section_radius);
 
-
+      is_endpoint_ = true;
+      GeometryPair::evaluate_position(Core::FADUtils::cast_to_double(point.get_eta()),
+          GeometryPair::ElementDataToDouble<Beam>::to_double(this->ele1posref_),
+          endpoint_reference_);
+      GeometryPair::evaluate_position(Core::FADUtils::cast_to_double(point.get_eta()),
+          GeometryPair::ElementDataToDouble<Beam>::to_double(this->ele1pos_),
+          endpoint_displacement_);
+      endpoint_displacement_ -= endpoint_reference_;
+      endpoint_gap_ = Core::FADUtils::cast_to_double(gap);
+      endpoint_normal_ = Core::FADUtils::cast_to_double(surface_normal);
+      endpoint_normal_.scale(endpoint_normal_.norm2());
+      endpoint_force_ = endpoint_normal_;
+      endpoint_force_.scale(Core::FADUtils::cast_to_double(force));
 
       std::cout << "\nendoiint contact active, gap: " << Core::FADUtils::cast_to_double(gap);
 
@@ -605,7 +633,50 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
 {
   // Get visualization of base method.
   base_class::get_pair_visualization(visualization_writer, visualization_params);
+  if (is_endpoint_)
+  {
+    std::shared_ptr<BeamInteraction::BeamToSolidOutputWriterVisualization> visualization =
+        visualization_writer->get_visualization_writer("btss-contact-end-point-forces");
+    auto& visualization_data = visualization->get_visualization_data();
+    std::vector<double>& point_coordinates = visualization_data.get_point_coordinates(3);
+    std::vector<double>& displacement =
+        visualization_data.get_point_data<double>("displacement", 3);
+    std::vector<double>& force_beam = visualization_data.get_point_data<double>("force_beam", 3);
+    std::vector<double>& normal = visualization_data.get_point_data<double>("normal", 3);
+    std::vector<double>& gap = visualization_data.get_point_data<double>("gap", 1);
 
+    gap.push_back(endpoint_gap_);
+    for (unsigned int dim = 0; dim < 3; dim++)
+    {
+      point_coordinates.push_back(endpoint_reference_(dim));
+      displacement.push_back(endpoint_displacement_(dim));
+      force_beam.push_back(endpoint_force_(dim));
+      normal.push_back(endpoint_normal_(dim));
+    }
+    // "btss-contact-edge-to-edge-forces"
+  }
+  if (is_edge_to_edge_)
+  {
+    std::shared_ptr<BeamInteraction::BeamToSolidOutputWriterVisualization> visualization =
+        visualization_writer->get_visualization_writer("btss-contact-edge-to-edge-forces");
+    auto& visualization_data = visualization->get_visualization_data();
+    std::vector<double>& point_coordinates = visualization_data.get_point_coordinates(3);
+    std::vector<double>& displacement =
+        visualization_data.get_point_data<double>("displacement", 3);
+    std::vector<double>& force_beam = visualization_data.get_point_data<double>("force_beam", 3);
+    std::vector<double>& normal = visualization_data.get_point_data<double>("normal", 3);
+    std::vector<double>& gap = visualization_data.get_point_data<double>("gap", 1);
+
+    gap.push_back(edge_to_edge_gap_);
+    for (unsigned int dim = 0; dim < 3; dim++)
+    {
+      point_coordinates.push_back(edge_to_edge_reference_(dim));
+      displacement.push_back(edge_to_edge_displacement_(dim));
+      force_beam.push_back(edge_to_edge_force_(dim));
+      normal.push_back(edge_to_edge_normal_(dim));
+    }
+    // "btss-contact-edge-to-edge-forces"
+  }
   std::shared_ptr<BeamInteraction::BeamToSolidOutputWriterVisualization> visualization_continuous =
       visualization_writer->get_visualization_writer("btss-contact-mortar-continuous");
   if (visualization_continuous == nullptr) return;
