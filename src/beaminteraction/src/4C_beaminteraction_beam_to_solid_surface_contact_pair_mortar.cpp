@@ -323,9 +323,10 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
     GeometryPair::line_to_line_closest_point_projection(
         beam_position, this->edge_position_, eta_a, eta_b, result);
 
-    if (result == GeometryPair::ProjectionResult::projection_found_valid)
+    if (this->element2()->id() == 47 and
+        result == GeometryPair::ProjectionResult::projection_found_valid)
     {
-      std::cout << "\n\n\n\n\n\nFOUND!!!!!!!!!!\n\n\n\n\n";
+      // std::cout << "\n\n\n\n\n\nFOUND!!!!!!!!!!\n\n\n\n\n";
 
       Core::LinAlg::Matrix<3, 1, mein_type> pos_beam;
       GeometryPair::evaluate_position(eta_a, beam_position, pos_beam);
@@ -338,7 +339,7 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
       diff -= pos_edge;
       mein_type gap = diff.norm2() - beam_cross_section_radius;
       mein_type force = penalty_force(gap, *this->params()->beam_to_solid_surface_contact_params(),
-          2 * beam_cross_section_radius);
+          2000 * beam_cross_section_radius);
 
       Core::LinAlg::Matrix<3, 1, mein_type> force_vec = diff;
       force_vec.scale(1.0 / diff.norm2());
@@ -386,15 +387,15 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
 
 
       const Core::Elements::Element* ele = this->face_element_->get_element();
-      std::cout << "\n is face1 " << ele->is_face_element();
-      std::cout << "\n node1 " << ele->nodes()[0]->id();
-      std::cout << "\n node1 " << ele->nodes()[0]->x()[0];
-      std::cout << "\n node1 " << ele->nodes()[0]->x()[1];
-      std::cout << "\n node1 " << ele->nodes()[0]->x()[2];
-      std::cout << "\n node2 " << ele->nodes()[1]->id();
-      std::cout << "\n node2 " << ele->nodes()[1]->x()[0];
-      std::cout << "\n node2 " << ele->nodes()[1]->x()[1];
-      std::cout << "\n node2 " << ele->nodes()[1]->x()[2];
+      // std::cout << "\n is face1 " << ele->is_face_element();
+      // std::cout << "\n node1 " << ele->nodes()[0]->id();
+      // std::cout << "\n node1 " << ele->nodes()[0]->x()[0];
+      // std::cout << "\n node1 " << ele->nodes()[0]->x()[1];
+      // std::cout << "\n node1 " << ele->nodes()[0]->x()[2];
+      // std::cout << "\n node2 " << ele->nodes()[1]->id();
+      // std::cout << "\n node2 " << ele->nodes()[1]->x()[0];
+      // std::cout << "\n node2 " << ele->nodes()[1]->x()[1];
+      // std::cout << "\n node2 " << ele->nodes()[1]->x()[2];
 
 
 
@@ -437,7 +438,7 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
   const unsigned int n_segments = this->line_to_3D_segments_.size();
   if (n_segments == 0) return;
 
-
+  if (n_segments > 1) FOUR_C_THROW("only one secment allowed");
   // Add end point penalty terms
   {
     // Get beam cross-section diameter
@@ -451,7 +452,6 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
     {
       const Core::Nodes::Node* node = this->element1()->nodes()[i_node];
       is_end_node[i_node] = node->num_element() == 1;
-      is_end_node[i_node] = false;
     }
 
     for (const GeometryPair::LineSegment<ScalarType>& segment : this->line_to_3D_segments_)
@@ -469,6 +469,12 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
                   << this->element2()->id();
         point = segment.get_end_point();
       }
+      else
+      {
+        std::cout << "\n no end point fourn for: " << this->element1()->id() << " "
+                  << this->element2()->id();
+        continue;
+      }
 
       // Evaluate the contact kinematics
       const auto [_1, _2, surface_normal, gap] =
@@ -478,6 +484,9 @@ void BeamInteraction::BeamToSolidSurfaceContactPairMortar<ScalarType, Beam, Surf
       ScalarType force = penalty_force(gap, *this->params()->beam_to_solid_surface_contact_params(),
           2 * beam_cross_section_radius);
 
+
+
+      std::cout << "\nendoiint contact active, gap: " << Core::FADUtils::cast_to_double(gap);
 
       // Get the shape function matrices.
       Core::LinAlg::Matrix<Beam::n_dof_ + Surface::n_dof_, 1, ScalarType>
