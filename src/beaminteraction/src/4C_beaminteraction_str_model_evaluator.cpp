@@ -329,11 +329,8 @@ void Solid::ModelEvaluator::BeamInteraction::set_sub_model_types()
           Global::Problem::instance()->beam_interaction_params().sublist(
               "BEAM TO SOLID SURFACE CONTACT"),
           "CONTACT_DISCRETIZATION") != Inpar::BeamToSolid::BeamToSolidContactDiscretization::none or
-      Global::Problem::instance()
-              ->parameters()
-              .get<FourC::BeamInteraction::BeamToSolidEdgeContactParameters>(
-                  "BEAM INTERACTION/BEAM TO SOLID EDGE CONTACT")
-              .constraint_enforcement != Inpar::BeamToSolid::BeamToSolidConstraintEnforcement::none)
+      Global::Problem::instance()->parameters().isParameter(
+          "BEAM INTERACTION/BEAM TO SOLID EDGE CONTACT"))
     submodeltypes_->insert(Inpar::BeamInteraction::submodel_beamcontact);
 
   // ---------------------------------------------------------------------------

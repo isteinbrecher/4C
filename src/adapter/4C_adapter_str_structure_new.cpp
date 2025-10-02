@@ -550,12 +550,8 @@ void Adapter::StructureBaseAlgorithmNew::set_model_types(
           Global::Problem::instance()->beam_interaction_params().sublist(
               "BEAM TO SOLID SURFACE CONTACT"),
           "CONTACT_DISCRETIZATION") != Inpar::BeamToSolid::BeamToSolidContactDiscretization::none or
-      Global::Problem::instance()
-              ->parameters()
-              .get<BeamInteraction::BeamToSolidEdgeContactParameters>(
-                  "BEAM INTERACTION/BEAM TO SOLID EDGE CONTACT")
-              .constraint_enforcement !=
-          Inpar::BeamToSolid::BeamToSolidConstraintEnforcement::none or
+      Global::Problem::instance()->parameters().isParameter(
+          "BEAM INTERACTION/BEAM TO SOLID EDGE CONTACT") or
       beampotconditions.size() > 0 or beampenaltycouplingconditions.size() > 0)
   {
     modeltypes.insert(Inpar::Solid::model_beaminteraction);

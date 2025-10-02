@@ -220,11 +220,8 @@ void BeamInteraction::SubmodelEvaluator::BeamContact::setup()
 
 
   // Check if beam-to-solid edge contact is present.
-  if (Global::Problem::instance()
-          ->parameters()
-          .get<BeamInteraction::BeamToSolidEdgeContactParameters>(
-              "BEAM INTERACTION/BEAM TO SOLID EDGE CONTACT")
-          .constraint_enforcement != Inpar::BeamToSolid::BeamToSolidConstraintEnforcement::none)
+  if (Global::Problem::instance()->parameters().isParameter(
+          "BEAM INTERACTION/BEAM TO SOLID EDGE CONTACT"))
   {
     contactelementtypes_.push_back(Core::Binstrategy::Utils::BinContentType::Solid);
     beam_contact_params_ptr_->build_beam_to_solid_edge_contact_params();
