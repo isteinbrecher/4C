@@ -32,10 +32,12 @@
 #include "4C_beaminteraction_submodel_evaluator_beamcontact_assembly_manager_indirect.hpp"
 #include "4C_fem_condition.hpp"
 #include "4C_fem_discretization.hpp"
+#include "4C_geometry_pair_averaged_nodal_values.hpp"
 #include "4C_geometry_pair_element.hpp"
 #include "4C_geometry_pair_element_faces.hpp"
 #include "4C_geometry_pair_evaluation_data_base.hpp"
 #include "4C_geometry_pair_line_to_3D_evaluation_data.hpp"
+#include "4C_geometry_pair_line_to_line_evaluation_data.hpp"
 #include "4C_geometry_pair_line_to_surface_evaluation_data.hpp"
 #include "4C_inpar_beam_to_solid.hpp"
 #include "4C_utils_exceptions.hpp"
@@ -57,12 +59,13 @@ BeamInteraction::BeamToSolidCondition::BeamToSolidCondition(
       condition_contact_pairs_(),
       beam_to_solid_params_(beam_to_solid_params)
 {
-  condition_data_ = BeamToSolidConditionData{
-      .is_indirect_assembly_manager =
-          beam_to_solid_params_->get_contact_discretization() ==
-              Inpar::BeamToSolid::BeamToSolidContactDiscretization::mortar ||
-          beam_to_solid_params_->get_contact_discretization() ==
-              Inpar::BeamToSolid::BeamToSolidContactDiscretization::mortar_cross_section};
+  if (beam_to_solid_params_ != nullptr)
+    condition_data_ = BeamToSolidConditionData{
+        .is_indirect_assembly_manager =
+            beam_to_solid_params_->get_contact_discretization() ==
+                Inpar::BeamToSolid::BeamToSolidContactDiscretization::mortar ||
+            beam_to_solid_params_->get_contact_discretization() ==
+                Inpar::BeamToSolid::BeamToSolidContactDiscretization::mortar_cross_section};
 }
 
 /**
@@ -875,7 +878,7 @@ BeamInteraction::BeamToLineCondition::BeamToLineCondition(
   beam_to_edge_parameters_ = beam_to_edge_parameters;
 
   // Create the geometry evaluation data for this condition.
-  geometry_evaluation_data_ = std::make_shared<GeometryPair::GeometryEvaluationDataBase>();
+  geometry_evaluation_data_ = std::make_shared<GeometryPair::LineToLineEvaluationData>();
 }
 
 /**
@@ -888,29 +891,32 @@ void BeamInteraction::BeamToLineCondition::build_id_sets(
   BeamToSolidCondition::build_id_sets(discretization);
 
   // Build the other line map.
-  other_line_map_.clear();
-  for (const auto& map_item : condition_other_->geometry())
+  first_line_map_ = condition_to_element_id_map(*condition_line_);
+  second_line_map_ = condition_to_element_id_map(*condition_other_);
+}
+
+/**
+ *
+ */
+void BeamInteraction::BeamToLineCondition::setup(
+    const std::shared_ptr<const Core::FE::Discretization>& discret)
+{
+  // Get the elements used in the pairs
+  std::set<int> first_element_ids_in_pairs;
+  std::set<int> second_element_ids_in_pairs;
+  for (const auto& pair : condition_contact_pairs_)
   {
-    if (!map_item.second->is_face_element())
-    {
-      FOUR_C_THROW("The case of beam-to-beam is not yet implemented");
-    }
-    else
-    {
-      // This is the case if the line element is an edge of a solid element
-      const std::shared_ptr<const Core::Elements::FaceElement> face_element =
-          std::dynamic_pointer_cast<const Core::Elements::FaceElement>(map_item.second);
-      const int solid_id = face_element->parent_element_id();
-      other_line_map_[solid_id] = face_element;
-    }
+    first_element_ids_in_pairs.insert(pair->element1()->id());
+    second_element_ids_in_pairs.insert(pair->element2()->id());
   }
 
-  // The size of the created map and the geometry in the condition have to match. Otherwise
-  // there are two edges connected to the same element, which is not implemented at this point.
-  if (other_line_map_.size() != condition_other_->geometry().size())
-    FOUR_C_THROW(
-        "There are multiple edges connected to one solid element in this condition. This case is "
-        "currently not implemented.");
+  GeometryPair::compute_averaged_nodal_values_id_data(first_element_ids_in_pairs, first_line_map_);
+  GeometryPair::compute_averaged_nodal_values_id_data(
+      second_element_ids_in_pairs, second_line_map_);
+
+  auto line_to_line_evaluation_data =
+      dynamic_cast<GeometryPair::LineToLineEvaluationData*>(geometry_evaluation_data_.get());
+  line_to_line_evaluation_data->setup(discret, condition_line_, condition_other_);
 }
 
 /**
@@ -924,7 +930,7 @@ BeamInteraction::BeamToLineCondition::create_contact_pair_internal(
 
   const auto* beam_element = dynamic_cast<const Discret::Elements::Beam3Base*>(ele_ptrs[0]);
   const bool beam_is_hermite = beam_element->hermite_centerline_interpolation();
-  const auto& core_element = other_line_map_[ele_ptrs[1]->id()];
+  const auto& core_element = second_line_map_[ele_ptrs[1]->id()];
   const auto shape = core_element->shape();
 
   if (beam_is_hermite and shape == Core::FE::CellType::line2)

@@ -40,7 +40,7 @@ namespace BeamInteraction
      */
     BeamToSolidEdgeContactPair(
         std::shared_ptr<BeamToSolidEdgeContactParameters> beam_to_solid_edge_parameters,
-        std::shared_ptr<const Core::Elements::Element> edge_element);
+        const Core::Elements::Element* edge_element);
 
     /**
      * \brief Setup the contact pair.
@@ -164,7 +164,7 @@ namespace BeamInteraction
     std::shared_ptr<BeamToSolidEdgeContactParameters> beam_to_solid_edge_parameters_;
 
     //! Pointer to the pure edge element
-    std::shared_ptr<const Core::Elements::Element> edge_element_;
+    const Core::Elements::Element* edge_element_;
 
     //! Flag it here is an active contact.
     bool is_active_ = false;

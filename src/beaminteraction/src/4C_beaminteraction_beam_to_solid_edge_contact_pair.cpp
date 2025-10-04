@@ -33,7 +33,7 @@ FOUR_C_NAMESPACE_OPEN
 template <typename Beam, typename Edge>
 BeamInteraction::BeamToSolidEdgeContactPair<Beam, Edge>::BeamToSolidEdgeContactPair(
     std::shared_ptr<BeamToSolidEdgeContactParameters> beam_to_solid_edge_parameters,
-    std::shared_ptr<const Core::Elements::Element> edge_element)
+    const Core::Elements::Element* edge_element)
     : BeamContactPair(),
       beam_to_solid_edge_parameters_(beam_to_solid_edge_parameters),
       edge_element_(edge_element)
@@ -73,9 +73,8 @@ void BeamInteraction::BeamToSolidEdgeContactPair<Beam, Edge>::evaluate_and_assem
 
   std::vector<double> edge_centerline_absolute_values(Edge::n_dof_, 0.0);
   BeamInteraction::Utils::extract_pos_dof_vec_absolute_values(
-      *discret, edge_element_.get(), *displacement_vector, edge_centerline_absolute_values);
-  auto edge_pos =
-      GeometryPair::InitializeElementData<Edge, scalar_type>::initialize(edge_element_.get());
+      *discret, edge_element_, *displacement_vector, edge_centerline_absolute_values);
+  auto edge_pos = GeometryPair::InitializeElementData<Edge, scalar_type>::initialize(edge_element_);
   for (unsigned int i_dof = 0; i_dof < Edge::n_dof_; i_dof++)
     edge_pos.element_position_(i_dof) = Core::FADUtils::HigherOrderFadValue<scalar_type>::apply(
         n_dof_fad, Beam::n_dof_ + i_dof, edge_centerline_absolute_values[i_dof]);

@@ -55,6 +55,15 @@ namespace GeometryPair
   };
 
   /**
+   * Method to be used for tangents on curves.
+   */
+  enum class CurveTangents
+  {
+    kinematic,               ///< Use kinematic tangents on the actual curve
+    averaged_nodal_tangents  ///< Use averaged nodal tangents
+  };
+
+  /**
    * \brief Map number of gauss points to 1D gauss rule
    */
   Core::FE::GaussRule1D int_to_gauss_rule1_d(const int n_gauss_points);

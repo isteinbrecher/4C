@@ -278,6 +278,11 @@ namespace BeamInteraction
     void build_id_sets(
         const std::shared_ptr<const Core::FE::Discretization>& discretization) override;
 
+    /**
+     * \brief Here we build the averaged nodal tangents if needed.
+     */
+    void setup(const std::shared_ptr<const Core::FE::Discretization>& discret) override;
+
    protected:
     /**
      * \brief Return the created beam contact pair for this condition. (derived)
@@ -290,7 +295,7 @@ namespace BeamInteraction
      */
     inline bool id_in_other(const int id_other) const override
     {
-      if (other_line_map_.find(id_other) != other_line_map_.end()) return true;
+      if (second_line_map_.find(id_other) != second_line_map_.end()) return true;
       return false;
     }
 
@@ -298,9 +303,9 @@ namespace BeamInteraction
     //! Contact parameters for this condition.
     std::shared_ptr<BeamToSolidEdgeContactParameters> beam_to_edge_parameters_;
 
-    //! Map containing the global volume element IDs for each face element of the surface in this
-    //! condition.
-    std::unordered_map<int, std::shared_ptr<const Core::Elements::Element>> other_line_map_;
+    //! Map from the global volume element ID to the edge element pointer.
+    std::unordered_map<int, const Core::Elements::Element*> first_line_map_;
+    std::unordered_map<int, const Core::Elements::Element*> second_line_map_;
   };
 
   /**
