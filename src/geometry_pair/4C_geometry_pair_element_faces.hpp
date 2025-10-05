@@ -316,6 +316,11 @@ namespace GeometryPair
           connected_faces_(),
           evaluate_current_normals_(evaluate_current_normals)
     {
+      static_assert(Surface::n_val_ == 1,
+          "Patch face elements only work for direct nodal values, i.e., not for Hermite elements."
+          "interpolation.");
+      static_assert(IsSurfaceAveragedNormalsElement<Surface>::value_,
+          "Patch face elements only work for elements with averaged nodal values.");
     }
 
     /**
