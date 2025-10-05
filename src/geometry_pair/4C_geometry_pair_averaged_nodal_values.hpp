@@ -21,7 +21,24 @@ FOUR_C_NAMESPACE_OPEN
 
 namespace GeometryPair
 {
-  void compute_averaged_nodal_values_id_data(const std::set<int>& element_ids_in_pairs,
+  struct AveragedNodalValuesData
+  {
+    struct A
+    {
+      std::set<int> connected_element_gid;
+    };
+
+    std::unordered_map<int, std::vector<int>> element_gid_to_element_dof;
+    std::unordered_map<int, std::set<int>> element_gid_to_connected_patch_element_gid;
+    std::unordered_map<int, std::vector<int>> element_gid_to_patch_dof;
+    std::unordered_map<int, int> gid_to_count_map;
+    std::unordered_map<int, double> gid_to_averaged_value_map;
+
+    std::unordered_map<int, A> averaged_node_data;
+  };
+
+  AveragedNodalValuesData compute_averaged_nodal_values_id_data(
+      const std::set<int>& element_ids_in_pairs,
       const std::unordered_map<int, const Core::Elements::Element*>& gid_to_evaluation_element_map);
 }  // namespace GeometryPair
 
