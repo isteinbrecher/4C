@@ -9,6 +9,7 @@
 
 #include "4C_beam3_reissner.hpp"
 #include "4C_beam3_triad_interpolation_local_rotation_vectors.hpp"
+#include "4C_beaminteraction_beam_to_solid_mortar_manager.hpp"
 #include "4C_beaminteraction_beam_to_solid_utils.hpp"
 #include "4C_beaminteraction_calc_utils.hpp"
 #include "4C_beaminteraction_geometry_pair_access_traits.hpp"
@@ -261,14 +262,14 @@ void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_and_assemble(
 
   // Penalty regularization positions
   Core::LinAlg::Matrix<3, 1> lambda_position = constraint_position;
-  lambda_position.scale(penalty_parameter_pos_);
+  lambda_position.scale(0.0);
   Core::LinAlg::Matrix<12, 1> residuum_position;
   residuum_position.multiply_nn(residuum_position_lin_lambda, lambda_position);
   residuum += residuum_position;
 
   Core::LinAlg::Matrix<12, 12> stiffness_position;
   stiffness_position.multiply_nn(residuum_position_lin_lambda, constraint_position_lin_kinematic);
-  stiffness_position.scale(penalty_parameter_pos_);
+  stiffness_position.scale(0.0);
   for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
   {
     Core::LinAlg::Matrix<3, 3, double> skew_lambda;
@@ -551,6 +552,386 @@ void BeamInteraction::BeamToBeamPointCouplingPair<
       << " beam2 gid: " << element2()->id() << ", position in parameter space: ["
       << position_in_parameterspace_[0] << ", " << position_in_parameterspace_[1] << "]\n";
 }
+
+
+template <typename Beam>
+void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_and_assemble_mortar_contributions(
+    const Core::FE::Discretization& discret, const BeamToSolidMortarManager* mortar_manager,
+    Core::LinAlg::SparseMatrix& global_constraint_lin_beam,
+    Core::LinAlg::SparseMatrix& global_constraint_lin_solid,
+    Core::LinAlg::SparseMatrix& global_force_beam_lin_lambda,
+    Core::LinAlg::SparseMatrix& global_force_solid_lin_lambda,
+    Core::LinAlg::FEVector<double>& global_constraint, Core::LinAlg::FEVector<double>& global_kappa,
+    Core::LinAlg::SparseMatrix& global_kappa_lin_beam,
+    Core::LinAlg::SparseMatrix& global_kappa_lin_solid,
+    Core::LinAlg::FEVector<double>& global_lambda_active,
+    const std::shared_ptr<const Core::LinAlg::Vector<double>>& displacement_vector)
+{
+  // Get the GIDs of the beams.
+  Core::LinAlg::Matrix<Beam::n_dof_, 1, int> beam1_centerline_gid;
+  Utils::get_element_centerline_gid_indices(discret, this->element1(), beam1_centerline_gid);
+  const auto git_rot_beam1 = Utils::get_element_rot_gid_indices(discret, this->element1());
+
+  Core::LinAlg::Matrix<Beam::n_dof_, 1, int> beam2_centerline_gid;
+  Utils::get_element_centerline_gid_indices(discret, this->element2(), beam2_centerline_gid);
+  const auto git_rot_beam2 = Utils::get_element_rot_gid_indices(discret, this->element2());
+
+
+  std::array<int, 2 * (Beam::n_dof_ + n_dof_rot_)> pair_gid2{-1};
+  for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
+  {
+    pair_gid2[i_dof] = beam1_centerline_gid(i_dof);
+    pair_gid2[i_dof + Beam::n_dof_ + n_dof_rot_] = beam2_centerline_gid(i_dof);
+  }
+  for (unsigned int i_dof = 0; i_dof < n_dof_rot_; i_dof++)
+  {
+    pair_gid2[i_dof + Beam::n_dof_] = git_rot_beam1[i_dof];
+    pair_gid2[i_dof + 2 * Beam::n_dof_ + n_dof_rot_] = git_rot_beam2[i_dof];
+  }
+
+  // Get the Lagrange multiplier GIDs.
+  const auto& [lambda_gid_pos, lambda_gid_rot] = mortar_manager->location_vector(*this);
+
+  std::array<int, 6> lambda_gid{-1};
+  lambda_gid[0] = lambda_gid_pos[6];
+  lambda_gid[1] = lambda_gid_pos[7];
+  lambda_gid[2] = lambda_gid_pos[8];
+  lambda_gid[3] = lambda_gid_rot[6];
+  lambda_gid[4] = lambda_gid_rot[7];
+  lambda_gid[5] = lambda_gid_rot[8];
+
+
+
+  check_init_setup();
+
+
+  const std::array<const Core::Elements::Element*, 2> beam_ele = {
+      this->element1(), this->element2()};
+
+  // Initialize pair values that we will fill while evaluating the cross-section kinematics.
+  std::array<int, 2 * (Beam::n_dof_ + n_dof_rot_)> pair_gid{-1};
+  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 12> left_transformation_matrix(
+      Core::LinAlg::Initialization::zero);
+  Core::LinAlg::Matrix<12, 2 * (Beam::n_dof_ + n_dof_rot_)> right_transformation_matrix(
+      Core::LinAlg::Initialization::zero);
+
+  // Initialize variables for evaluation of the positions.
+  std::array<Core::LinAlg::Matrix<3, 1>, 2> r_ref;
+  std::array<Core::LinAlg::Matrix<3, 1>, 2> r;
+
+  // Evaluate positional kinematics
+  {
+    std::array<GeometryPair::ElementData<Beam, double>, 2> beam_pos_ref;
+    std::array<GeometryPair::ElementData<Beam, double>, 2> beam_pos;
+
+    for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+    {
+      beam_pos_ref[i_beam] =
+          GeometryPair::InitializeElementData<Beam, double>::initialize(beam_ele[i_beam]);
+      beam_pos[i_beam] =
+          GeometryPair::InitializeElementData<Beam, double>::initialize(beam_ele[i_beam]);
+
+      // Get GIDs of the beams positional DOF.
+      std::vector<int> lm_beam, lm_solid, lmowner, lmstride;
+      beam_ele[i_beam]->location_vector(discret, lm_beam, lmowner, lmstride);
+      const std::array<int, 12> pos_dof_indices = {0, 1, 2, 6, 7, 8, 9, 10, 11, 15, 16, 17};
+      for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
+        pair_gid[i_dof + i_beam * (Beam::n_dof_ + n_dof_rot_)] = lm_beam[pos_dof_indices[i_dof]];
+
+      // Set current nodal positions (and tangents) for beam element
+      std::vector<double> element_posdofvec_values(Beam::n_dof_, 0.0);
+      BeamInteraction::Utils::extract_pos_dof_vec_values(
+          discret, beam_ele[i_beam], *displacement_vector, element_posdofvec_values);
+      std::vector<double> element_posdofvec_absolutevalues(Beam::n_dof_, 0.0);
+      BeamInteraction::Utils::extract_pos_dof_vec_absolute_values(
+          discret, beam_ele[i_beam], *displacement_vector, element_posdofvec_absolutevalues);
+
+      // Get the current and reference position.
+      for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
+      {
+        beam_pos[i_beam].element_position_(i_dof) = element_posdofvec_absolutevalues[i_dof];
+        beam_pos_ref[i_beam].element_position_(i_dof) =
+            element_posdofvec_absolutevalues[i_dof] - element_posdofvec_values[i_dof];
+      }
+    }
+
+    if (use_closest_point_projection_)
+    {
+      // Closest point projection between the two curves
+      const auto projection_result =
+          GeometryPair::line_to_line_closest_point_projection(beam_pos_ref[0], beam_pos_ref[1],
+              position_in_parameterspace_[0], position_in_parameterspace_[1]);
+
+      if (projection_result != GeometryPair::ProjectionResult::projection_found_valid)
+      {
+        // No projection was found
+        return;
+      }
+
+      // Check the projection distance
+      Core::LinAlg::Matrix<3, 1> diff{Core::LinAlg::Initialization::zero};
+      double beam_radii = 0.0;
+      for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+      {
+        Core::LinAlg::Matrix<3, 1> r;
+        GeometryPair::evaluate_position<Beam>(
+            position_in_parameterspace_[i_beam], beam_pos_ref[i_beam], r);
+        r.scale(i_beam == 0 ? -1.0 : 1.0);
+        diff += r;
+
+        const auto* beam_ptr = dynamic_cast<const Discret::Elements::Beam3Base*>(beam_ele[i_beam]);
+        beam_radii += beam_ptr->get_circular_cross_section_radius_for_interactions();
+      }
+      if (projection_valid_factor_ * beam_radii < diff.norm2())
+      {
+        return;
+      }
+
+      // Make sure that we have unique pairs for projections directly on nodes
+      if (not line_to_line_evaluation_data_->evaluate_projection_coordinates(
+              beam_ele, position_in_parameterspace_))
+      {
+        return;
+      }
+    }
+
+    for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+    {
+      // Evaluate the current position of the coupling point.
+      GeometryPair::evaluate_position<Beam>(
+          position_in_parameterspace_[i_beam], beam_pos[i_beam], r[i_beam]);
+
+      // Evaluate the reference position of the coupling point.
+      GeometryPair::evaluate_position<Beam>(
+          position_in_parameterspace_[i_beam], beam_pos_ref[i_beam], r_ref[i_beam]);
+
+      // Shape function matrices
+      Core::LinAlg::Matrix<3, Beam::n_dof_> H_full;
+      GeometryPair::evaluate_shape_function_matrix<Beam>(
+          H_full, position_in_parameterspace_[i_beam], beam_pos_ref[i_beam].shape_function_data_);
+      for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
+      {
+        for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
+        {
+          left_transformation_matrix(i_dof + i_beam * (Beam::n_dof_ + n_dof_rot_),
+              i_dir + i_beam * 6) = H_full(i_dir, i_dof);
+          right_transformation_matrix(i_dir + i_beam * 6,
+              i_dof + i_beam * (Beam::n_dof_ + n_dof_rot_)) = H_full(i_dir, i_dof);
+        }
+      }
+    }
+  }
+
+  // Initialize variables for evaluation of the rotations.
+  std::array<Core::LinAlg::Matrix<4, 1, scalar_type_rot>, 2> cross_section_quaternion;
+  std::array<Core::LinAlg::Matrix<4, 1, double>, 2> cross_section_quaternion_ref;
+
+  // Evaluate rotational kinematics
+  {
+    for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+    {
+      // Get GIDs of the beams rotational DOF.
+      const auto rot_gid = Utils::get_element_rot_gid_indices(discret, beam_ele[i_beam]);
+      for (unsigned int i_dof = 0; i_dof < n_dof_rot_; i_dof++)
+        pair_gid[i_dof + Beam::n_dof_ + i_beam * (Beam::n_dof_ + n_dof_rot_)] = rot_gid[i_dof];
+
+      // Get the triad interpolation schemes for the two beams.
+      LargeRotations::TriadInterpolationLocalRotationVectors<3, double> triad_interpolation_scheme;
+      LargeRotations::TriadInterpolationLocalRotationVectors<3, double>
+          ref_triad_interpolation_scheme;
+      BeamInteraction::get_beam_triad_interpolation_scheme(discret, *displacement_vector,
+          beam_ele[i_beam], triad_interpolation_scheme, ref_triad_interpolation_scheme);
+
+      // Calculate the rotation vector of the beam cross section and its FAD representation.
+      Core::LinAlg::Matrix<4, 1, double> quaternion_double;
+      Core::LinAlg::Matrix<3, 1, double> psi_double;
+      Core::LinAlg::Matrix<3, 1, scalar_type_rot> psi;
+      triad_interpolation_scheme.get_interpolated_quaternion_at_xi(
+          quaternion_double, position_in_parameterspace_[i_beam]);
+      Core::LargeRotations::quaterniontoangle(quaternion_double, psi_double);
+      for (unsigned int i_dim = 0; i_dim < 3; i_dim++)
+        psi(i_dim) = Core::FADUtils::HigherOrderFadValue<scalar_type_rot>::apply(
+            6, i_beam * 3 + i_dim, psi_double(i_dim));
+      Core::LargeRotations::angletoquaternion(psi, cross_section_quaternion[i_beam]);
+      ref_triad_interpolation_scheme.get_interpolated_quaternion_at_xi(
+          cross_section_quaternion_ref[i_beam], position_in_parameterspace_[i_beam]);
+
+      // Linearization interpolation matrices
+      std::vector<Core::LinAlg::Matrix<3, 3, double>> I_tilde;
+      Core::LinAlg::Matrix<3, n_dof_rot_, double> I_tilde_full;
+      triad_interpolation_scheme.get_nodal_generalized_rotation_interpolation_matrices_at_xi(
+          I_tilde, position_in_parameterspace_[i_beam]);
+      for (unsigned int i_node = 0; i_node < 3; i_node++)
+        for (unsigned int i_dim_0 = 0; i_dim_0 < 3; i_dim_0++)
+          for (unsigned int i_dim_1 = 0; i_dim_1 < 3; i_dim_1++)
+            I_tilde_full(i_dim_0, i_node * 3 + i_dim_1) = I_tilde[i_node](i_dim_0, i_dim_1);
+
+      // Spin shape function matrices
+      auto L_beam = Core::LinAlg::SerialDenseVector(3);
+      Core::FE::shape_function_1d(
+          L_beam, position_in_parameterspace_[i_beam], Core::FE::CellType::line3);
+      Core::LinAlg::Matrix<3, n_dof_rot_, double> L_beam_full{Core::LinAlg::Initialization::zero};
+      for (unsigned int i_node_rot = 0; i_node_rot < 3; i_node_rot++)
+      {
+        for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
+        {
+          L_beam_full(i_dir, i_dir + 3 * i_node_rot) = L_beam(i_node_rot);
+        }
+      }
+      for (unsigned int i_dof = 0; i_dof < n_dof_rot_; i_dof++)
+      {
+        for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
+        {
+          left_transformation_matrix(i_dof + Beam::n_dof_ + i_beam * (Beam::n_dof_ + n_dof_rot_),
+              i_dir + 3 + i_beam * 6) = L_beam_full(i_dir, i_dof);
+          right_transformation_matrix(
+              i_dir + 3 + i_beam * 6, i_dof + Beam::n_dof_ + i_beam * (Beam::n_dof_ + n_dof_rot_)) =
+              I_tilde_full(i_dir, i_dof);
+        }
+      }
+    }
+  }
+
+  // Positional coupling terms
+  const auto [constraint_position, constraint_position_lin_kinematic, residuum_position_lin_lambda,
+      evaluation_data_position] = evaluate_positional_coupling(r_ref, r,
+      cross_section_quaternion_ref, cross_section_quaternion);
+
+  // Rotational coupling terms
+  const auto [constraint_rotation, constraint_rotation_lin_kinematic, residuum_rotation_lin_lambda,
+      evaluation_data_rotation] =
+      evaluate_rotational_coupling(cross_section_quaternion_ref, cross_section_quaternion);
+
+  // Coupling residuum and stiffness
+  Core::LinAlg::Matrix<12, 12> stiffness(Core::LinAlg::Initialization::zero);
+
+  // Penalty regularization positions
+  Core::LinAlg::Matrix<3, 1> lambda_position;
+  Core::LinAlg::Matrix<12, 12> stiffness_position;
+  stiffness_position.multiply_nn(residuum_position_lin_lambda, constraint_position_lin_kinematic);
+  stiffness_position.scale(penalty_parameter_pos_);
+  for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+  {
+    Core::LinAlg::Matrix<3, 3, double> skew_lambda;
+    Core::LargeRotations::computespin(skew_lambda, lambda_position);
+    Core::LinAlg::Matrix<3, 3> temp_matrix;
+    temp_matrix.multiply_nn(skew_lambda, evaluation_data_position[i_beam]);
+    for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
+    {
+      for (unsigned int j_dir = 0; j_dir < 3; j_dir++)
+      {
+        stiffness_position(i_dir + 3 + 6 * i_beam, j_dir + 3 + 6 * i_beam) -=
+            temp_matrix(i_dir, j_dir);
+      }
+    }
+  }
+  // stiffness += stiffness_position;
+
+  // Penalty regularization rotations
+  Core::LinAlg::Matrix<3, 1> lambda_rotation;
+  Core::LinAlg::Matrix<12, 12> stiffness_rot;
+  // stiffness_rot.multiply_nn(residuum_rotation_lin_lambda, constraint_rotation_lin_kinematic);
+  // stiffness_rot.scale(penalty_parameter_rot_);
+  for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+  {
+    for (unsigned int i = 0; i < 3; i++)
+    {
+      for (unsigned int j = 0; j < 3; j++)
+      {
+        for (unsigned int l = 0; l < 3; l++)
+        {
+          stiffness_rot(i + 3, l + 3 + 6 * i_beam) -=
+              evaluation_data_rotation[i_beam][i][j][l] * lambda_rotation(j);
+          stiffness_rot(i + 9, l + 3 + 6 * i_beam) +=
+              evaluation_data_rotation[i_beam][i][j][l] * lambda_rotation(j);
+        }
+      }
+    }
+  }
+  // stiffness += stiffness_rot;
+
+  // Map residuum and stiffness to element DOFs
+
+  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 2 * (Beam::n_dof_ + n_dof_rot_)>
+      stiffness_pair{Core::LinAlg::Initialization::zero};
+
+  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 12> temp_matrix;
+  temp_matrix.multiply(left_transformation_matrix, stiffness);
+  stiffness_pair.multiply(temp_matrix, right_transformation_matrix);
+
+  //  const Core::FE::Discretization& discret, const BeamToSolidMortarManager* mortar_manager,
+  //   Core::LinAlg::SparseMatrix& global_constraint_lin_beam,
+  //   Core::LinAlg::SparseMatrix& global_constraint_lin_solid,
+  //   Core::LinAlg::SparseMatrix& global_force_beam_lin_lambda,
+  //   Core::LinAlg::SparseMatrix& global_force_solid_lin_lambda,
+  //   Core::LinAlg::FEVector<double>& global_constraint, Core::LinAlg::FEVector<double>&
+  //   global_kappa, Core::LinAlg::SparseMatrix& global_kappa_lin_beam, Core::LinAlg::SparseMatrix&
+  //   global_kappa_lin_solid, Core::LinAlg::FEVector<double>& global_lambda_active, const
+  //   std::shared_ptr<const Core::LinAlg::Vector<double>>& displacement_vector
+
+
+
+  // // Add the coupling terms into the global vector ana matrix.
+  // if (force_vector != nullptr)
+  //   force_vector->sum_into_global_values(pair_gid.size(), pair_gid.data(), residuum_pair.data());
+  // if (stiffness_matrix != nullptr)
+  // {
+  //   for (unsigned int i_dof = 0; i_dof < pair_gid.size(); i_dof++)
+  //   {
+  //     for (unsigned int j_dof = 0; j_dof < pair_gid.size(); j_dof++)
+  //     {
+  //       if (pair_gid[i_dof] == -1 or pair_gid[j_dof] == -1) continue;
+  //       stiffness_matrix->fe_assemble(
+  //           stiffness_pair(i_dof, j_dof), pair_gid[i_dof], pair_gid[j_dof]);
+  //     }
+  //   }
+  // }
+
+  constraint_position.print(std::cout);
+
+  // Assemble into the global vectors
+  for (unsigned int i = 0; i < 3; i++)
+  {
+    global_constraint.sum_into_global_value(lambda_gid[i], 0, constraint_position(i));
+    // global_constraint.sum_into_global_value(lambda_gid_rot[i], 0, constraint_rotation(i));
+    global_kappa.sum_into_global_value(lambda_gid[i], 0, 1.0);
+    // global_kappa.sum_into_global_value(lambda_gid_rot[i], 0, 1.0);
+    global_lambda_active.sum_into_global_value(lambda_gid[i], 0, 1.0);
+    // global_lambda_active.sum_into_global_value(lambda_gid_rot[i], 0, 1.0);
+
+    // Dont do this in loop
+  }
+
+  //  constraint_position_lin_kinematic, residuum_position_lin_lambda,
+  Core::LinAlg::Matrix<3, 2 * (Beam::n_dof_ + n_dof_rot_)> TEMP_constraint_position_lin_kinematic(
+      Core::LinAlg::Initialization::zero);
+  TEMP_constraint_position_lin_kinematic.multiply(
+      constraint_position_lin_kinematic, right_transformation_matrix);
+
+  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 3> TEMP_residuum_position_lin_lambda(
+      Core::LinAlg::Initialization::zero);
+  TEMP_residuum_position_lin_lambda.multiply(
+      left_transformation_matrix, residuum_position_lin_lambda);
+
+
+
+  // Assemble into global matrices.
+  for (unsigned int i_dof_lambda = 0; i_dof_lambda < 3; i_dof_lambda++)
+  {
+    for (unsigned int i_dof_beam_pos = 0; i_dof_beam_pos < 2 * (Beam::n_dof_ + n_dof_rot_);
+        i_dof_beam_pos++)
+    {
+      global_constraint_lin_beam.fe_assemble(
+          TEMP_constraint_position_lin_kinematic(i_dof_lambda, i_dof_beam_pos),
+          lambda_gid[i_dof_lambda], pair_gid2[i_dof_beam_pos]);
+      global_force_beam_lin_lambda.fe_assemble(
+          TEMP_residuum_position_lin_lambda(i_dof_beam_pos, i_dof_lambda),
+          pair_gid2[i_dof_beam_pos], lambda_gid[i_dof_lambda]);
+    }
+  }
+}
+
+
 
 /**
  * Explicit template initialization of template class.

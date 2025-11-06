@@ -626,9 +626,16 @@ void BeamInteraction::BeamToSolidMortarManager::add_global_force_stiffness_penal
         Core::LinAlg::matrix_multiply(penalty_regularization_lin_constraint, false,
             *constraint_lin_solid_, false, false, false, true);
 
+    // std::cout << "penalty_regularization_lin_constraint:" << std::endl;
+    // penalty_regularization_lin_constraint.print(std::cout);
+
+    // std::cout << "constraint_lin_beam_:" << std::endl;
+    // constraint_lin_beam_->print(std::cout);
+
     // Penalty regularization linearized w.r.t. the scaling vector
     if (kappa_lin_beam_->NormInf() > 1e-12 && kappa_lin_solid_->NormInf() > 1e-12)
     {
+      exit(0);
       Core::LinAlg::SparseMatrix penalty_regularization_lin_kappa(
           *std::get<2>(penalty_regularization));
       penalty_regularization_lin_kappa.complete();
@@ -639,6 +646,12 @@ void BeamInteraction::BeamToSolidMortarManager::add_global_force_stiffness_penal
       regularized_constraint_lin_beam->add(*kappa_lin_beam_scaled, false, 1.0, 1.0);
       regularized_constraint_lin_solid->add(*kappa_lin_solid_scaled, false, 1.0, 1.0);
     }
+
+    // std::cout << "Regularized matrices:" << std::endl;
+    // std::cout << "force_beam_lin_lambda_:" << std::endl;
+    // force_beam_lin_lambda_->print(std::cout);
+    // std::cout << "regularized_constraint_lin_beam:" << std::endl;
+    // regularized_constraint_lin_beam->print(std::cout);
 
     // Calculate the needed submatrices
     const auto force_beam_lin_lambda_times_constraint_lin_beam =
@@ -653,6 +666,8 @@ void BeamInteraction::BeamToSolidMortarManager::add_global_force_stiffness_penal
     const auto force_solid_lin_lambda_times_constraint_lin_solid =
         Core::LinAlg::matrix_multiply(*force_solid_lin_lambda_, false,
             *regularized_constraint_lin_solid, false, false, false, true);
+    // std::cout << "force_beam_lin_lambda_times_constraint_lin_beam:" << std::endl;
+    // force_beam_lin_lambda_times_constraint_lin_beam->print(std::cout);
 
     // Add contributions to the global stiffness matrix
     stiff->add(*force_beam_lin_lambda_times_constraint_lin_beam, false, 1.0, 1.0);

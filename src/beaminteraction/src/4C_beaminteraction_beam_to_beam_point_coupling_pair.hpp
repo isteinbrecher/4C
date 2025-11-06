@@ -178,6 +178,18 @@ namespace BeamInteraction
     {
       return ContactPairType::beam_to_beam_point_coupling;
     }
+    void evaluate_and_assemble_mortar_contributions(const Core::FE::Discretization& discret,
+        const BeamToSolidMortarManager* mortar_manager,
+        Core::LinAlg::SparseMatrix& global_constraint_lin_beam,
+        Core::LinAlg::SparseMatrix& global_constraint_lin_solid,
+        Core::LinAlg::SparseMatrix& global_force_beam_lin_lambda,
+        Core::LinAlg::SparseMatrix& global_force_solid_lin_lambda,
+        Core::LinAlg::FEVector<double>& global_constraint,
+        Core::LinAlg::FEVector<double>& global_kappa,
+        Core::LinAlg::SparseMatrix& global_kappa_lin_beam,
+        Core::LinAlg::SparseMatrix& global_kappa_lin_solid,
+        Core::LinAlg::FEVector<double>& global_lambda_active,
+        const std::shared_ptr<const Core::LinAlg::Vector<double>>& displacement_vector) override;
 
    private:
     /**

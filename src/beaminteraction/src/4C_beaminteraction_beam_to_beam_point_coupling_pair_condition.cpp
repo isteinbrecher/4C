@@ -8,6 +8,9 @@
 #include "4C_beaminteraction_beam_to_beam_point_coupling_pair_condition.hpp"
 
 #include "4C_beaminteraction_beam_to_beam_point_coupling_pair.hpp"
+#include "4C_beaminteraction_beam_to_solid_mortar_manager.hpp"
+#include "4C_beaminteraction_beam_to_solid_volume_meshtying_params.hpp"
+#include "4C_beaminteraction_submodel_evaluator_beamcontact_assembly_manager_indirect.hpp"
 #include "4C_comm_mpi_utils.hpp"
 #include "4C_fem_condition.hpp"
 #include "4C_fem_discretization.hpp"
@@ -17,6 +20,58 @@
 
 FOUR_C_NAMESPACE_OPEN
 
+
+/**
+ *
+ */
+std::shared_ptr<BeamInteraction::SubmodelEvaluator::BeamContactAssemblyManager>
+BeamInteraction::BeamToBeamPointCouplingConditionDirect::create_indirect_assembly_manager(
+    const std::shared_ptr<const Core::FE::Discretization>& discret)
+{
+  const int start_gid_lambda = discret->dof_row_map()->max_all_gid() + 1;
+
+  auto temp = std::make_shared<BeamInteraction::BeamToSolidVolumeMeshtyingParams>();
+  temp->init();
+  temp->setup();
+
+  auto mortar_manager =
+      std::make_shared<BeamInteraction::BeamToSolidMortarManager>(discret, temp, start_gid_lambda);
+  mortar_manager->setup();
+  mortar_manager->set_local_maps(contact_pairs_);
+
+  // Create the indirect assembly manager with the mortar manager
+  return std::make_shared<SubmodelEvaluator::BeamContactAssemblyManagerInDirect>(mortar_manager);
+
+  // if (condition_data_.is_indirect_assembly_manager)
+  // {
+  //   // Create the mortar manager. We add 1 to the MaxAllGID since this gives the maximum GID
+  //   and NOT
+  //   // the length of the GIDs.
+  //   const int start_gid_lambda = discret->dof_row_map()->max_all_gid() + 1;
+  //   std::shared_ptr<BeamToSolidMortarManager> mortar_manager = nullptr;
+  //   if (std::dynamic_pointer_cast<const BeamToSolidSurfaceContactParams>(beam_to_solid_params_)
+  //   ==
+  //       nullptr)
+  //   {
+  //     mortar_manager = std::make_shared<BeamInteraction::BeamToSolidMortarManager>(
+  //         discret, beam_to_solid_params_, start_gid_lambda);
+  //   }
+  //   else
+  //   {
+  //     mortar_manager = std::make_shared<BeamInteraction::BeamToSolidMortarManagerContact>(
+  //         discret, beam_to_solid_params_, start_gid_lambda);
+  //   }
+
+  //   // Setup the mortar manager.
+  //   mortar_manager->setup();
+  //   mortar_manager->set_local_maps(condition_contact_pairs_);
+
+  //   // Create the indirect assembly manager with the mortar manager
+  //   return
+  //   std::make_shared<SubmodelEvaluator::BeamContactAssemblyManagerInDirect>(mortar_manager);
+  // }
+  // return nullptr;
+}
 
 /**
  *
@@ -47,8 +102,8 @@ void BeamInteraction::BeamToBeamPointCouplingConditionDirect::create_contact_pai
                                                         : nullptr;
   };
 
-  // We create the pair on the processor that owns the beam element with the lowest GID connected to
-  // the first node.
+  // We create the pair on the processor that owns the beam element with the lowest GID connected
+  // to the first node.
   std::array<const Core::Elements::Element*, 2> element_ptrs{};
   for (size_t i_node = 0; i_node < 2; i_node++)
   {
@@ -58,7 +113,8 @@ void BeamInteraction::BeamToBeamPointCouplingConditionDirect::create_contact_pai
     }
   }
 
-  // We check if the first element pointer is valid and if that element is owned by this processor.
+  // We check if the first element pointer is valid and if that element is owned by this
+  // processor.
   int pairs_created = 0;
   if (element_ptrs[0] != nullptr)
   {
@@ -107,6 +163,8 @@ void BeamInteraction::BeamToBeamPointCouplingConditionDirect::create_contact_pai
         "all MPI ranks, but found {}.",
         total_created_pairs);
   }
+
+  contact_pairs_ = contact_pairs;
 }
 
 

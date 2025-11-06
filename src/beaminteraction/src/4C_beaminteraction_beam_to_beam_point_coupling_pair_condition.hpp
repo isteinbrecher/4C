@@ -39,6 +39,13 @@ namespace BeamInteraction
     bool ids_in_condition(const int id_line, const int id_other) const override { return false; };
 
     /**
+     * \brief Create the indirect assembly manager for this condition. (derived)
+     */
+    std::shared_ptr<BeamInteraction::SubmodelEvaluator::BeamContactAssemblyManager>
+    create_indirect_assembly_manager(
+        const std::shared_ptr<const Core::FE::Discretization>& discret) override;
+
+    /**
      * \brief Create the beam contact pairs needed for this condition (derived).
      */
     std::shared_ptr<BeamInteraction::BeamContactPair> create_contact_pair(
@@ -62,6 +69,8 @@ namespace BeamInteraction
     double rotational_penalty_parameter_;
     /// Element-local parameter coordinates of the coupling nodes
     std::array<double, 2> local_parameter_coordinates_;
+
+    std::vector<std::shared_ptr<BeamInteraction::BeamContactPair>> contact_pairs_;
   };
 
   /**
