@@ -79,10 +79,10 @@ void BeamInteraction::BeamToBeamPointCouplingConditionDirect::create_contact_pai
         }
 
         // Create the pair
-        contact_pairs.emplace_back(
-            std::make_shared<BeamToBeamPointCouplingPair<GeometryPair::t_hermite>>(
-                rotational_penalty_parameter_, positional_penalty_parameter_,
-                local_parameter_coordinates_));
+        contact_pairs.emplace_back(std::make_shared<
+            BeamToBeamPointCouplingPair<GeometryPair::t_hermite, 21, GeometryPair::t_hermite, 21>>(
+            rotational_penalty_parameter_, positional_penalty_parameter_,
+            local_parameter_coordinates_));
         contact_pairs.back()->init(params_ptr, {element_ptrs[0], element_ptrs[1]});
         contact_pairs.back()->setup();
         pairs_created += 1;
@@ -152,7 +152,8 @@ BeamInteraction::BeamToBeamPointCouplingConditionIndirect::create_contact_pair(
   // Check if the given elements are in this condition.
   if (!ids_in_condition(ele_ptrs[0]->id(), ele_ptrs[1]->id())) return nullptr;
 
-  return std::make_shared<BeamToBeamPointCouplingPair<GeometryPair::t_hermite>>(
+  return std::make_shared<
+      BeamToBeamPointCouplingPair<GeometryPair::t_hermite, 21, GeometryPair::t_hermite, 21>>(
       rotational_penalty_parameter_, positional_penalty_parameter_, projection_valid_factor_,
       geometry_evaluation_data_);
 }

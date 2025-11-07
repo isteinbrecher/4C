@@ -12,6 +12,7 @@
 #include "4C_beaminteraction_beam_to_solid_utils.hpp"
 #include "4C_beaminteraction_calc_utils.hpp"
 #include "4C_beaminteraction_geometry_pair_access_traits.hpp"
+#include "4C_fem_general_extract_values.hpp"
 #include "4C_geometry_pair_constants.hpp"
 #include "4C_geometry_pair_element_evaluation_functions.hpp"
 #include "4C_geometry_pair_line_to_line.hpp"
@@ -19,9 +20,11 @@
 #include "4C_linalg_serialdensematrix.hpp"
 #include "4C_linalg_serialdensevector.hpp"
 #include "4C_linalg_sparsematrix.hpp"
+#include "4C_linalg_utils_densematrix_multiply.hpp"
 #include "4C_utils_exceptions.hpp"
 
 #include <array>
+#include <tuple>
 
 FOUR_C_NAMESPACE_OPEN
 
@@ -29,8 +32,8 @@ FOUR_C_NAMESPACE_OPEN
 /**
  *
  */
-template <typename Beam>
-void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::setup()
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
+void BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2, n_dof_beam_2>::setup()
 {
   // This pair only works for Simo Reissner beam elements.
   const auto check_simo_reissner_beam = [](auto element)
@@ -48,198 +51,97 @@ void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::setup()
 /**
  *
  */
-template <typename Beam>
-void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_and_assemble(
-    const std::shared_ptr<const Core::FE::Discretization>& discret,
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
+void BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2,
+    n_dof_beam_2>::evaluate_and_assemble(const std::shared_ptr<const Core::FE::Discretization>&
+                                             discret,
     const std::shared_ptr<Core::LinAlg::FEVector<double>>& force_vector,
     const std::shared_ptr<Core::LinAlg::SparseMatrix>& stiffness_matrix,
     const std::shared_ptr<const Core::LinAlg::Vector<double>>& displacement_vector)
 {
   check_init_setup();
 
+  if (use_closest_point_projection_ && !closest_point_projection_evaluated_)
+  {
+    evaluate_closest_point_projection();
+    closest_point_projection_evaluated_ = true;
+  }
+  if (!evaluate_pair_) return;
 
-  const std::array<const Core::Elements::Element*, 2> beam_ele = {
+  constexpr std::array<unsigned int, 2> n_dof_beam = {n_dof_beam_1, n_dof_beam_2};
+
+  const std::array<const Core::Elements::Element*, 2> beam_elements = {
       this->element1(), this->element2()};
 
-  // Initialize pair values that we will fill while evaluating the cross-section kinematics.
-  std::array<int, 2 * (Beam::n_dof_ + n_dof_rot_)> pair_gid{-1};
-  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 12> left_transformation_matrix(
+  // Transformation matrices for the coupling constraints
+  Core::LinAlg::Matrix<n_dof_total, 12> left_transformation_matrix(
       Core::LinAlg::Initialization::zero);
-  Core::LinAlg::Matrix<12, 2 * (Beam::n_dof_ + n_dof_rot_)> right_transformation_matrix(
+  Core::LinAlg::Matrix<12, n_dof_total> right_transformation_matrix(
       Core::LinAlg::Initialization::zero);
 
-  // Initialize variables for evaluation of the positions.
+  // Variables holding the GIDs of the beam element DOFs.
+  std::array<int, n_dof_total> pair_gid{-1};
+
+  // Kinematic variables.
   std::array<Core::LinAlg::Matrix<3, 1>, 2> r_ref;
   std::array<Core::LinAlg::Matrix<3, 1>, 2> r;
-
-  // Evaluate positional kinematics
-  {
-    std::array<GeometryPair::ElementData<Beam, double>, 2> beam_pos_ref;
-    std::array<GeometryPair::ElementData<Beam, double>, 2> beam_pos;
-
-    for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
-    {
-      beam_pos_ref[i_beam] =
-          GeometryPair::InitializeElementData<Beam, double>::initialize(beam_ele[i_beam]);
-      beam_pos[i_beam] =
-          GeometryPair::InitializeElementData<Beam, double>::initialize(beam_ele[i_beam]);
-
-      // Get GIDs of the beams positional DOF.
-      std::vector<int> lm_beam, lm_solid, lmowner, lmstride;
-      beam_ele[i_beam]->location_vector(*discret, lm_beam, lmowner, lmstride);
-      const std::array<int, 12> pos_dof_indices = {0, 1, 2, 6, 7, 8, 9, 10, 11, 15, 16, 17};
-      for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
-        pair_gid[i_dof + i_beam * (Beam::n_dof_ + n_dof_rot_)] = lm_beam[pos_dof_indices[i_dof]];
-
-      // Set current nodal positions (and tangents) for beam element
-      std::vector<double> element_posdofvec_values(Beam::n_dof_, 0.0);
-      BeamInteraction::Utils::extract_pos_dof_vec_values(
-          *discret, beam_ele[i_beam], *displacement_vector, element_posdofvec_values);
-      std::vector<double> element_posdofvec_absolutevalues(Beam::n_dof_, 0.0);
-      BeamInteraction::Utils::extract_pos_dof_vec_absolute_values(
-          *discret, beam_ele[i_beam], *displacement_vector, element_posdofvec_absolutevalues);
-
-      // Get the current and reference position.
-      for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
-      {
-        beam_pos[i_beam].element_position_(i_dof) = element_posdofvec_absolutevalues[i_dof];
-        beam_pos_ref[i_beam].element_position_(i_dof) =
-            element_posdofvec_absolutevalues[i_dof] - element_posdofvec_values[i_dof];
-      }
-    }
-
-    if (use_closest_point_projection_)
-    {
-      // Closest point projection between the two curves
-      const auto projection_result =
-          GeometryPair::line_to_line_closest_point_projection(beam_pos_ref[0], beam_pos_ref[1],
-              position_in_parameterspace_[0], position_in_parameterspace_[1]);
-
-      if (projection_result != GeometryPair::ProjectionResult::projection_found_valid)
-      {
-        // No projection was found
-        return;
-      }
-
-      // Check the projection distance
-      Core::LinAlg::Matrix<3, 1> diff{Core::LinAlg::Initialization::zero};
-      double beam_radii = 0.0;
-      for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
-      {
-        Core::LinAlg::Matrix<3, 1> r;
-        GeometryPair::evaluate_position<Beam>(
-            position_in_parameterspace_[i_beam], beam_pos_ref[i_beam], r);
-        r.scale(i_beam == 0 ? -1.0 : 1.0);
-        diff += r;
-
-        const auto* beam_ptr = dynamic_cast<const Discret::Elements::Beam3Base*>(beam_ele[i_beam]);
-        beam_radii += beam_ptr->get_circular_cross_section_radius_for_interactions();
-      }
-      if (projection_valid_factor_ * beam_radii < diff.norm2())
-      {
-        return;
-      }
-
-      // Make sure that we have unique pairs for projections directly on nodes
-      if (not line_to_line_evaluation_data_->evaluate_projection_coordinates(
-              beam_ele, position_in_parameterspace_))
-      {
-        return;
-      }
-    }
-
-    for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
-    {
-      // Evaluate the current position of the coupling point.
-      GeometryPair::evaluate_position<Beam>(
-          position_in_parameterspace_[i_beam], beam_pos[i_beam], r[i_beam]);
-
-      // Evaluate the reference position of the coupling point.
-      GeometryPair::evaluate_position<Beam>(
-          position_in_parameterspace_[i_beam], beam_pos_ref[i_beam], r_ref[i_beam]);
-
-      // Shape function matrices
-      Core::LinAlg::Matrix<3, Beam::n_dof_> H_full;
-      GeometryPair::evaluate_shape_function_matrix<Beam>(
-          H_full, position_in_parameterspace_[i_beam], beam_pos_ref[i_beam].shape_function_data_);
-      for (unsigned int i_dof = 0; i_dof < Beam::n_dof_; i_dof++)
-      {
-        for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
-        {
-          left_transformation_matrix(i_dof + i_beam * (Beam::n_dof_ + n_dof_rot_),
-              i_dir + i_beam * 6) = H_full(i_dir, i_dof);
-          right_transformation_matrix(i_dir + i_beam * 6,
-              i_dof + i_beam * (Beam::n_dof_ + n_dof_rot_)) = H_full(i_dir, i_dof);
-        }
-      }
-    }
-  }
-
-  // Initialize variables for evaluation of the rotations.
+  std::array<std::vector<double>, 2> element_displacement;
   std::array<Core::LinAlg::Matrix<4, 1, scalar_type_rot>, 2> cross_section_quaternion;
   std::array<Core::LinAlg::Matrix<4, 1, double>, 2> cross_section_quaternion_ref;
 
-  // Evaluate rotational kinematics
+  // Evaluate all quantities at the current state for both beams.
   {
     for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
     {
-      // Get GIDs of the beams rotational DOF.
-      const auto rot_gid = Utils::get_element_rot_gid_indices(*discret, beam_ele[i_beam]);
-      for (unsigned int i_dof = 0; i_dof < n_dof_rot_; i_dof++)
-        pair_gid[i_dof + Beam::n_dof_ + i_beam * (Beam::n_dof_ + n_dof_rot_)] = rot_gid[i_dof];
+      const auto* beam_element =
+          dynamic_cast<const Discret::Elements::Beam3Base*>(beam_elements[i_beam]);
 
-      // Get the triad interpolation schemes for the two beams.
-      LargeRotations::TriadInterpolationLocalRotationVectors<3, double> triad_interpolation_scheme;
-      LargeRotations::TriadInterpolationLocalRotationVectors<3, double>
-          ref_triad_interpolation_scheme;
-      BeamInteraction::get_beam_triad_interpolation_scheme(*discret, *displacement_vector,
-          beam_ele[i_beam], triad_interpolation_scheme, ref_triad_interpolation_scheme);
+      std::vector<int> lm, lmowner, lmstride;
+      beam_element->location_vector(*discret, lm, lmowner, lmstride);
+      auto eledisp = Core::FE::extract_values(*displacement_vector, lm);
+      auto eledisp_ref = std::vector<double>(eledisp.size(), 0.0);
+      element_displacement[i_beam] = eledisp;
 
-      // Calculate the rotation vector of the beam cross section and its FAD representation.
-      Core::LinAlg::Matrix<4, 1, double> quaternion_double;
-      Core::LinAlg::Matrix<3, 1, double> psi_double;
+      for (unsigned int i_dof = 0; i_dof < n_dof_beam[i_beam]; i_dof++)
+        pair_gid[i_dof + i_beam * n_dof_beam_1] = lm[i_dof];
+
+      beam_element->get_pos_at_xi(r[i_beam], position_in_parameterspace_[i_beam], eledisp);
+      beam_element->get_pos_at_xi(r_ref[i_beam], position_in_parameterspace_[i_beam], eledisp_ref);
+
+      Core::LinAlg::Matrix<3, 3> triad;
+      Core::LinAlg::Matrix<3, 1> psi_double;
       Core::LinAlg::Matrix<3, 1, scalar_type_rot> psi;
-      triad_interpolation_scheme.get_interpolated_quaternion_at_xi(
-          quaternion_double, position_in_parameterspace_[i_beam]);
+      beam_element->get_triad_at_xi(triad, position_in_parameterspace_[i_beam], eledisp);
+      Core::LinAlg::Matrix<4, 1, double> quaternion_double;
+      Core::LargeRotations::triadtoquaternion(triad, quaternion_double);
       Core::LargeRotations::quaterniontoangle(quaternion_double, psi_double);
       for (unsigned int i_dim = 0; i_dim < 3; i_dim++)
         psi(i_dim) = Core::FADUtils::HigherOrderFadValue<scalar_type_rot>::apply(
             6, i_beam * 3 + i_dim, psi_double(i_dim));
       Core::LargeRotations::angletoquaternion(psi, cross_section_quaternion[i_beam]);
-      ref_triad_interpolation_scheme.get_interpolated_quaternion_at_xi(
-          cross_section_quaternion_ref[i_beam], position_in_parameterspace_[i_beam]);
 
-      // Linearization interpolation matrices
-      std::vector<Core::LinAlg::Matrix<3, 3, double>> I_tilde;
-      Core::LinAlg::Matrix<3, n_dof_rot_, double> I_tilde_full;
-      triad_interpolation_scheme.get_nodal_generalized_rotation_interpolation_matrices_at_xi(
-          I_tilde, position_in_parameterspace_[i_beam]);
-      for (unsigned int i_node = 0; i_node < 3; i_node++)
-        for (unsigned int i_dim_0 = 0; i_dim_0 < 3; i_dim_0++)
-          for (unsigned int i_dim_1 = 0; i_dim_1 < 3; i_dim_1++)
-            I_tilde_full(i_dim_0, i_node * 3 + i_dim_1) = I_tilde[i_node](i_dim_0, i_dim_1);
+      Core::LinAlg::Matrix<3, 3> triad_ref;
+      beam_element->get_triad_at_xi(triad_ref, position_in_parameterspace_[i_beam], eledisp_ref);
+      Core::LargeRotations::triadtoquaternion(triad_ref, cross_section_quaternion_ref[i_beam]);
 
-      // Spin shape function matrices
-      auto L_beam = Core::LinAlg::SerialDenseVector(3);
-      Core::FE::shape_function_1d(
-          L_beam, position_in_parameterspace_[i_beam], Core::FE::CellType::line3);
-      Core::LinAlg::Matrix<3, n_dof_rot_, double> L_beam_full{Core::LinAlg::Initialization::zero};
-      for (unsigned int i_node_rot = 0; i_node_rot < 3; i_node_rot++)
+      Core::LinAlg::SerialDenseMatrix trafomatrix_left;
+      trafomatrix_left.shape(6, n_dof_beam[i_beam]);
+      beam_element->get_generalized_interpolation_matrix_variations_at_xi(
+          trafomatrix_left, position_in_parameterspace_[i_beam], eledisp);
+
+      Core::LinAlg::SerialDenseMatrix trafomatrix_right;
+      trafomatrix_right.shape(6, n_dof_beam[i_beam]);
+      beam_element->get_generalized_interpolation_matrix_increments_at_xi(
+          trafomatrix_right, position_in_parameterspace_[i_beam], eledisp);
+
+      for (unsigned int i_dof = 0; i_dof < n_dof_beam[i_beam]; i_dof++)
       {
-        for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
+        for (unsigned int i_dir = 0; i_dir < 6; i_dir++)
         {
-          L_beam_full(i_dir, i_dir + 3 * i_node_rot) = L_beam(i_node_rot);
-        }
-      }
-      for (unsigned int i_dof = 0; i_dof < n_dof_rot_; i_dof++)
-      {
-        for (unsigned int i_dir = 0; i_dir < 3; i_dir++)
-        {
-          left_transformation_matrix(i_dof + Beam::n_dof_ + i_beam * (Beam::n_dof_ + n_dof_rot_),
-              i_dir + 3 + i_beam * 6) = L_beam_full(i_dir, i_dof);
-          right_transformation_matrix(
-              i_dir + 3 + i_beam * 6, i_dof + Beam::n_dof_ + i_beam * (Beam::n_dof_ + n_dof_rot_)) =
-              I_tilde_full(i_dir, i_dof);
+          const unsigned int i_row = i_dir + i_beam * 6;
+          const unsigned int i_col = i_dof + i_beam * n_dof_beam_1;
+          left_transformation_matrix(i_col, i_row) = trafomatrix_left(i_dir, i_dof);
+          right_transformation_matrix(i_row, i_col) = trafomatrix_right(i_dir, i_dof);
         }
       }
     }
@@ -315,16 +217,38 @@ void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_and_assemble(
   stiffness += stiffness_rot;
 
   // Map residuum and stiffness to element DOFs
-  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 1> residuum_pair{
-      Core::LinAlg::Initialization::zero};
-  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 2 * (Beam::n_dof_ + n_dof_rot_)>
-      stiffness_pair{Core::LinAlg::Initialization::zero};
+  Core::LinAlg::Matrix<n_dof_total, 1> residuum_pair{Core::LinAlg::Initialization::zero};
+  Core::LinAlg::Matrix<n_dof_total, n_dof_total> stiffness_pair{Core::LinAlg::Initialization::zero};
   residuum_pair.multiply(left_transformation_matrix, residuum);
-  Core::LinAlg::Matrix<2 * (Beam::n_dof_ + n_dof_rot_), 12> temp_matrix;
+  Core::LinAlg::Matrix<n_dof_total, 12> temp_matrix;
   temp_matrix.multiply(left_transformation_matrix, stiffness);
   stiffness_pair.multiply(temp_matrix, right_transformation_matrix);
 
-  // Add the coupling terms into the global vector ana matrix.
+  // Add stiffness contrbutions due to the beam forumlation
+  for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+  {
+    const auto* beam_element =
+        dynamic_cast<const Discret::Elements::Beam3Base*>(beam_elements[i_beam]);
+
+    Core::LinAlg::SerialDenseVector force(6, true);
+    for (unsigned int i_dim = 0; i_dim < 6; i_dim++) force(i_dim) = residuum(i_dim + 6 * i_beam);
+
+    Core::LinAlg::SerialDenseMatrix stiffness_beam;
+    stiffness_beam.shape(n_dof_beam[i_beam], n_dof_beam[i_beam]);
+    beam_element->get_stiffmat_resulting_from_generalized_interpolation_matrix_at_xi(
+        stiffness_beam, position_in_parameterspace_[i_beam], element_displacement[i_beam], force);
+
+    for (unsigned int i_dof = 0; i_dof < n_dof_beam[i_beam]; i_dof++)
+    {
+      for (unsigned int j_dof = 0; j_dof < n_dof_beam[i_beam]; j_dof++)
+      {
+        stiffness_pair(i_dof + i_beam * n_dof_beam_1, j_dof + i_beam * n_dof_beam_1) +=
+            stiffness_beam(i_dof, j_dof);
+      }
+    }
+  }
+
+  // Add the coupling terms into the global vector and matrix.
   if (force_vector != nullptr)
     force_vector->sum_into_global_values(pair_gid.size(), pair_gid.data(), residuum_pair.data());
   if (stiffness_matrix != nullptr)
@@ -333,7 +257,6 @@ void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_and_assemble(
     {
       for (unsigned int j_dof = 0; j_dof < pair_gid.size(); j_dof++)
       {
-        if (pair_gid[i_dof] == -1 or pair_gid[j_dof] == -1) continue;
         stiffness_matrix->fe_assemble(
             stiffness_pair(i_dof, j_dof), pair_gid[i_dof], pair_gid[j_dof]);
       }
@@ -344,11 +267,89 @@ void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_and_assemble(
 /**
  *
  */
-template <typename Beam>
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
+void BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2,
+    n_dof_beam_2>::evaluate_closest_point_projection()
+{
+  const std::array<const Core::Elements::Element*, 2> beam_elements = {
+      this->element1(), this->element2()};
+
+  auto get_beam_ref_data = [&]<typename Element, unsigned int i_beam>()
+  {
+    auto beam_pos_ref =
+        GeometryPair::InitializeElementData<Element, double>::initialize(beam_elements[i_beam]);
+
+    const auto* beam_element =
+        dynamic_cast<const Discret::Elements::Beam3Base*>(beam_elements[i_beam]);
+    std::vector<double> zero_reference_displacement(
+        std::get<i_beam>(std::make_tuple(n_dof_beam_1, n_dof_beam_2)), 0.0);
+    std::vector<double> reference_dof_centerline(Element::n_dof_, 0.0);
+    beam_element->extract_centerline_dof_values_from_element_state_vector(
+        zero_reference_displacement, reference_dof_centerline, true);
+
+    // Get the current and reference position.
+    for (unsigned int i_dof = 0; i_dof < Element::n_dof_; i_dof++)
+    {
+      beam_pos_ref.element_position_(i_dof) = reference_dof_centerline[i_dof];
+    }
+
+    return beam_pos_ref;
+  };
+
+  // Closest point projection between the two curves
+  const auto beam_pos_ref_1 = get_beam_ref_data.template operator()<Beam1, 0>();
+  const auto beam_pos_ref_2 = get_beam_ref_data.template operator()<Beam2, 1>();
+  const auto projection_result = GeometryPair::line_to_line_closest_point_projection(beam_pos_ref_1,
+      beam_pos_ref_2, position_in_parameterspace_[0], position_in_parameterspace_[1]);
+
+  if (projection_result != GeometryPair::ProjectionResult::projection_found_valid)
+  {
+    // No projection was found
+    evaluate_pair_ = false;
+    return;
+  }
+
+  // Check the projection distance
+  Core::LinAlg::Matrix<3, 1> diff{Core::LinAlg::Initialization::zero};
+  Core::LinAlg::Matrix<3, 1> r;
+  GeometryPair::evaluate_position<Beam1>(position_in_parameterspace_[0], beam_pos_ref_1, r);
+  diff -= r;
+  GeometryPair::evaluate_position<Beam2>(position_in_parameterspace_[1], beam_pos_ref_2, r);
+  diff += r;
+
+  double beam_radii = 0.0;
+  for (unsigned int i_beam = 0; i_beam < 2; i_beam++)
+  {
+    const auto* beam_ptr = dynamic_cast<const Discret::Elements::Beam3Base*>(beam_elements[i_beam]);
+    beam_radii += beam_ptr->get_circular_cross_section_radius_for_interactions();
+  }
+  if (projection_valid_factor_ * beam_radii < diff.norm2())
+  {
+    evaluate_pair_ = false;
+    return;
+  }
+
+  // Make sure that we have unique pairs for projections directly on nodes
+  if (not line_to_line_evaluation_data_->evaluate_projection_coordinates(
+          beam_elements, position_in_parameterspace_))
+  {
+    evaluate_pair_ = false;
+    return;
+  }
+
+  // All checks passed, this pair shall be evaluated.
+  evaluate_pair_ = true;
+}
+
+/**
+ *
+ */
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
 std::tuple<Core::LinAlg::Matrix<3, 1>, Core::LinAlg::Matrix<3, 12>, Core::LinAlg::Matrix<12, 3>,
     std::array<Core::LinAlg::Matrix<3, 3, double>, 2>>
-BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_positional_coupling(
-    const std::array<Core::LinAlg::Matrix<3, 1>, 2>& r_ref,
+BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2,
+    n_dof_beam_2>::evaluate_positional_coupling(const std::array<Core::LinAlg::Matrix<3, 1>, 2>&
+                                                    r_ref,
     const std::array<Core::LinAlg::Matrix<3, 1>, 2>& r,
     const std::array<Core::LinAlg::Matrix<4, 1, double>, 2>& cross_section_quaternion_ref,
     const std::array<Core::LinAlg::Matrix<4, 1, scalar_type_rot>, 2>& cross_section_quaternion)
@@ -437,11 +438,12 @@ BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_positional_coupling
 /**
  *
  */
-template <typename Beam>
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
 std::tuple<Core::LinAlg::Matrix<3, 1>, Core::LinAlg::Matrix<3, 12>, Core::LinAlg::Matrix<12, 3>,
     std::array<std::array<std::array<std::array<double, 3>, 3>, 3>, 2>>
-BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_rotational_coupling(
-    const std::array<Core::LinAlg::Matrix<4, 1, double>, 2>& cross_section_quaternion_ref,
+BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2,
+    n_dof_beam_2>::evaluate_rotational_coupling(const std::array<Core::LinAlg::Matrix<4, 1, double>,
+                                                    2>& cross_section_quaternion_ref,
     const std::array<Core::LinAlg::Matrix<4, 1, scalar_type_rot>, 2>& cross_section_quaternion)
 {
   // Coupling vectors and matrices
@@ -526,8 +528,9 @@ BeamInteraction::BeamToBeamPointCouplingPair<Beam>::evaluate_rotational_coupling
 /**
  *
  */
-template <typename Beam>
-void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::print(std::ostream& out) const
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
+void BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2, n_dof_beam_2>::print(
+    std::ostream& out) const
 {
   check_init_setup();
 
@@ -541,9 +544,9 @@ void BeamInteraction::BeamToBeamPointCouplingPair<Beam>::print(std::ostream& out
 /**
  *
  */
-template <typename Beam>
-void BeamInteraction::BeamToBeamPointCouplingPair<
-    Beam>::print_summary_one_line_per_active_segment_pair(std::ostream& out) const
+template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
+void BeamInteraction::BeamToBeamPointCouplingPair<Beam1, n_dof_beam_1, Beam2,
+    n_dof_beam_2>::print_summary_one_line_per_active_segment_pair(std::ostream& out) const
 {
   check_init_setup();
 
@@ -559,7 +562,7 @@ namespace BeamInteraction
 {
   using namespace GeometryPair;
 
-  template class BeamToBeamPointCouplingPair<t_hermite>;
+  template class BeamToBeamPointCouplingPair<t_hermite, 21, t_hermite, 21>;
 }  // namespace BeamInteraction
 
 FOUR_C_NAMESPACE_CLOSE

@@ -31,15 +31,17 @@ namespace BeamInteraction
 {
   /**
    * \brief Class for point-wise beam to beam mesh tying.
-   * @param beam Type from GeometryPair::ElementDiscretization... representing the beam.
    */
-  template <typename Beam>
+  template <typename Beam1, unsigned int n_dof_beam_1, typename Beam2, unsigned int n_dof_beam_2>
   class BeamToBeamPointCouplingPair : public BeamContactPair
   {
    protected:
     //! FAD type for rotational coupling. The 6 dependent DOFs are the 3 rotational DOFs of each
     //! beam element.
     using scalar_type_rot = typename Sacado::Fad::SLFad<double, 6>;
+
+    //! Total number of DOFs for both beams.
+    static const unsigned int n_dof_total = n_dof_beam_1 + n_dof_beam_2;
 
    public:
     /**
@@ -51,6 +53,8 @@ namespace BeamInteraction
           penalty_parameter_pos_(penalty_parameter_pos),
           penalty_parameter_rot_(penalty_parameter_rot),
           use_closest_point_projection_(false),
+          closest_point_projection_evaluated_(true),
+          evaluate_pair_(true),
           position_in_parameterspace_(pos_in_parameterspace) {};
 
     /**
@@ -63,6 +67,8 @@ namespace BeamInteraction
           penalty_parameter_pos_(penalty_parameter_pos),
           penalty_parameter_rot_(penalty_parameter_rot),
           use_closest_point_projection_(true),
+          closest_point_projection_evaluated_(false),
+          evaluate_pair_(false),
           position_in_parameterspace_({0, 0}),
           projection_valid_factor_(projection_valid_factor),
           line_to_line_evaluation_data_(line_to_line_evaluation_data) {};
@@ -181,6 +187,11 @@ namespace BeamInteraction
 
    private:
     /**
+     * \brief Evaluate the closest point projection for this pair.
+     */
+    void evaluate_closest_point_projection();
+
+    /**
      * \brief Evaluate the positional coupling terms based on general cross-section kinematics.
      */
     std::tuple<Core::LinAlg::Matrix<3, 1>, Core::LinAlg::Matrix<3, 12>, Core::LinAlg::Matrix<12, 3>,
@@ -211,7 +222,13 @@ namespace BeamInteraction
     double penalty_parameter_rot_;
 
     //! If this the interacting points are computed via closest point projection or not.
-    bool use_closest_point_projection_ = false;
+    bool use_closest_point_projection_;
+
+    //! Flag if the closest point projection has been evaluated.
+    bool closest_point_projection_evaluated_;
+
+    //! Flag if this pair should be evaluated.
+    bool evaluate_pair_;
 
     //! Coupling point positions in the element parameter spaces.
     std::array<double, 2> position_in_parameterspace_;
