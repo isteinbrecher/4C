@@ -613,6 +613,7 @@ namespace
             "cell type '{}'.",
             eb_id, eb.cell_type, element_name, cell_type);
 
+        int id_cell_in_block = 0;
         for (const auto& cell : eb.cells())
         {
           // Do not yet use the external cell ID. 4C is not yet prepared to deal with this!
@@ -620,10 +621,12 @@ namespace
           auto ele = Core::Communication::factory(element_name, cell_type_string, ele_count, 0);
           if (!ele) FOUR_C_THROW("element creation failed");
           ele->set_node_ids(cell.size(), cell.data());
-          ele->read_element(element_name, cell_type_string, specific_data);
+          ele->read_element_new(
+              element_name, cell_type_string, specific_data, eb.cell_data, id_cell_in_block);
 
           user_elements.emplace(ele_count, std::move(ele));
           ele_count++;
+          id_cell_in_block++;
         }
       }
 

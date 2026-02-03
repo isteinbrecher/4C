@@ -184,6 +184,16 @@ bool Core::Elements::Element::read_element(const std::string& eletype, const std
   return false;
 }
 
+/*----------------------------------------------------------------------*/
+/*----------------------------------------------------------------------*/
+bool Core::Elements::Element::read_element_new(const std::string& eletype,
+    const std::string& distype, const Core::IO::InputParameterContainer& container,
+    const std::unordered_map<std::string, Core::IO::MeshInput::FieldDataVariantType<3>>& cell_data,
+    int cell_id_in_block)
+{
+  FOUR_C_THROW("subclass implementations missing");
+  return false;
+}
 
 /*----------------------------------------------------------------------*
  |  set node numbers to element (public)                     mwgee 11/06|

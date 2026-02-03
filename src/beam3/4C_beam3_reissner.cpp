@@ -263,7 +263,15 @@ void Discret::Elements::Beam3rType::setup_element_definition(
 
   defs[Core::FE::CellType::line2] = all_of({
       parameter<int>("MAT"),
-      parameter<std::vector<double>>("TRIADS", {.size = 6}),
+      parameter<std::vector<double>>("TRIADS",
+          {
+              .default_value = std::vector<double>{0, 0, 0, 0, 0, 0},
+              .size = 6,
+          }),
+      parameter<std::string>("TRIADS_FROM_MESH",
+          {
+              .default_value = "",
+          }),
       parameter<bool>("USE_FAD", {.default_value = false}),
       parameter<bool>("HERMITE_CENTERLINE",
           {

@@ -20,8 +20,10 @@ FOUR_C_NAMESPACE_OPEN
 
 /*-----------------------------------------------------------------------------------------------*
  *-----------------------------------------------------------------------------------------------*/
-bool Discret::Elements::Beam3r::read_element(const std::string& eletype, const std::string& distype,
-    const Core::IO::InputParameterContainer& container)
+bool Discret::Elements::Beam3r::read_element_new(const std::string& eletype,
+    const std::string& distype, const Core::IO::InputParameterContainer& container,
+    const std::unordered_map<std::string, Core::IO::MeshInput::FieldDataVariantType<3>>& cell_data,
+    int cell_id_in_block)
 {
   /* the triad field is discretized with Lagrange polynomials of order num_node()-1;
    * the centerline is either discretized in the same way or with 3rd order Hermite polynomials;
@@ -61,6 +63,20 @@ bool Discret::Elements::Beam3r::read_element(const std::string& eletype, const s
   /* extract rotational pseudovectors at element nodes in reference configuration
    *  and save them as quaternions at each node, respectively*/
   auto nodal_rotvecs = container.get<std::vector<double>>("TRIADS");
+
+  const auto triad_field_name = container.get<std::string>("TRIADS_FROM_MESH");
+
+  const auto& triad_field_data_variant = cell_data.at(triad_field_name);
+  const auto& triad_field_data =
+      std::get<std::vector<Core::LinAlg::SymmetricTensor<double, 3, 3>>>(triad_field_data_variant);
+
+  nodal_rotvecs[0] = triad_field_data[cell_id_in_block](0, 0);
+  nodal_rotvecs[1] = triad_field_data[cell_id_in_block](1, 1);
+  nodal_rotvecs[2] = triad_field_data[cell_id_in_block](2, 2);
+  nodal_rotvecs[3] = triad_field_data[cell_id_in_block](0, 1);
+  nodal_rotvecs[5] = triad_field_data[cell_id_in_block](0, 2);
+  nodal_rotvecs[4] = triad_field_data[cell_id_in_block](1, 2);
+
 
   for (int node = 0; node < nnodetriad; node++)
     for (int dim = 0; dim < 3; dim++) theta0node_[node](dim) = nodal_rotvecs[3 * node + dim];

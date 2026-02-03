@@ -449,8 +449,11 @@ namespace Discret
       /*!
       \brief Read input for this element
       */
-      bool read_element(const std::string& eletype, const std::string& distype,
-          const Core::IO::InputParameterContainer& container) override;
+      bool read_element_new(const std::string& eletype, const std::string& distype,
+          const Core::IO::InputParameterContainer& container,
+          const std::unordered_map<std::string, Core::IO::MeshInput::FieldDataVariantType<3>>&
+              cell_data,
+          int cell_id_in_block) override;
 
       //@}
 
