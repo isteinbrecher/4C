@@ -1,0 +1,100 @@
+# ----------------------------------------
+# This input file was created with BeamMe.
+# Copyright (c) 2018-2026 BeamMe Authors
+# https://beamme-py.github.io/beamme/
+# ----------------------------------------
+TITLE:
+  BeamMe:
+    creation_date: "2026-08-28 07:03:33"
+    Application:
+      path: "/data/a11bivst/dev/4C/source/beam_element_test/create_model.py"
+      git_sha: "de30445d4db707432595d74d60c2640f6c926d7d"
+      git_date: "2026-08-28 07:00:13 +0000"
+    BeamMe:
+      git_SHA: "de30445d4db707432595d74d60c2640f6c926d7d"
+      git_date: "2026-08-28 07:00:13 +0000"
+PROBLEM TYPE:
+  PROBLEMTYPE: "Structure"
+IO:
+  OUTPUT_BIN: false
+  STRUCT_DISP: false
+  VERBOSITY: "Standard"
+IO/RUNTIME VTK OUTPUT:
+  OUTPUT_DATA_FORMAT: "binary"
+  INTERVAL_STEPS: 1
+  EVERY_ITERATION: false
+IO/RUNTIME VTK OUTPUT/BEAMS:
+  OUTPUT_BEAMS: true
+  DISPLACEMENT: true
+  USE_ABSOLUTE_POSITIONS: true
+  TRIAD_VISUALIZATIONPOINT: true
+  STRAINS_GAUSSPOINT: true
+  ELEMENT_GID: true
+IO/RUNTIME VTK OUTPUT/STRUCTURE:
+  OUTPUT_STRUCTURE: true
+  DISPLACEMENT: true
+  STRESS_STRAIN: false
+  ELEMENT_OWNER: true
+  ELEMENT_GID: true
+  ELEMENT_MAT_ID: true
+SOLVER 1:
+  NAME: "Structure_Solver"
+  SOLVER: "Superlu"
+STRUCTURAL DYNAMIC:
+  LINEAR_SOLVER: 1
+  INT_STRATEGY: "Standard"
+  DYNAMICTYPE: "Statics"
+  RESULTSEVERY: 0
+  NLNSOL: "fullnewton"
+  PREDICT: "ConstDis"
+  TIMESTEP: 1.0
+  NUMSTEP: 1
+  MAXTIME: 1.0
+  MAXITER: 10
+  TOLRES: 1e-12
+  TOLDISP: 1e-12
+MATERIALS:
+  - MAT: 1
+    MAT_BeamReissnerElastHyper:
+      YOUNG: 100.0
+      POISSONRATIO: 0.0
+      DENS: 0.0
+      CROSSAREA: 0.031415926535897934
+      SHEARCORR: 1.0
+      MOMINPOL: 0.00015707963267948968
+      MOMIN2: 7.853981633974484e-05
+      MOMIN3: 7.853981633974484e-05
+DESIGN POINT DIRICH CONDITIONS:
+  - E: 1
+    NUMDOF: 6
+    ONOFF: [1, 1, 1, 1, 1, 1]
+    VAL: [0, 0, 0, 0, 0, 0]
+    FUNCT:
+      - null
+      - null
+      - null
+      - null
+      - null
+      - null
+DESIGN POINT NEUMANN CONDITIONS:
+  - E: 2
+    NUMDOF: 6
+    ONOFF: [0, 0, 1, 0, 0, 0]
+    VAL: [0, 0, 0.001, 0, 0, 0]
+    FUNCT:
+      - null
+      - null
+      - 1
+      - null
+      - null
+      - null
+FUNCT1:
+  - SYMBOLIC_FUNCTION_OF_TIME: "t"
+STRUCTURE ELEMENTS:
+  - "1 BEAM3R LINE2 1 2 MAT 1 HERMITE_CENTERLINE false TRIADS 0.0 0.0 0.0 0.0 0.0 1.5707963267948968"
+NODE COORDS:
+  - "NODE 1 COORD 2.220446049250313e-16 0.0 0.0"
+  - "NODE 2 COORD 1.0 1.0 0.0"
+DNODE-NODE TOPOLOGY:
+  - "NODE 1 DNODE 1"
+  - "NODE 2 DNODE 2"

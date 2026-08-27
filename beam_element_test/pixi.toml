@@ -1,0 +1,13 @@
+[workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+[dependencies]
+python = "3.12.*"
+pytest = "*"
+ruff = "*"
+
+[pypi-dependencies]
+beamme = { git = "https://github.com/beamme-py/beamme.git", branch = "main", extras = ["fourc"] }
+vistools = "*"
+pandas = "*"
