@@ -716,8 +716,66 @@ void Discret::Elements::Beam3r::calc_internal_and_inertia_forces_and_stiff(
   update_disp_tot_lag_and_nodal_triads<nnodetriad, nnodecl, vpernode, double>(
       disp, disp_totlag_centerline, Qnode);
 
+  {
+    std::cout
+        << std::endl
+        << std::endl
+        << "Debug print out to show the \"input\" values to the internal force and stiffness matrix"
+        << " calculation" << std::endl;
+
+    Core::LinAlg::Matrix<3 * vpernode * nnodecl, 1, double> reference_position(
+        Core::LinAlg::Initialization::zero);
+    for (unsigned int dim = 0; dim < 3; ++dim)
+    {
+      for (unsigned int node = 0; node < nnodecl; ++node)
+      {
+        reference_position(3 * vpernode * node + dim) = nodes()[node]->x()[dim];
+      }
+    }
+    std::cout << "Centerline reference position:" << std::endl;
+    reference_position.print(std::cout);
+
+    std::cout << "Reference rotation vectors for each node:" << std::endl;
+    for (unsigned int inode = 0; inode < nnodetriad; ++inode)
+    {
+      std::cout << "Node " << inode << ": ";
+      theta0node_[inode].print(std::cout);
+    }
+
+    Core::LinAlg::Matrix<3 * vpernode * nnodecl, 1, double> displacement = disp_totlag_centerline;
+    displacement -= reference_position;
+
+    std::cout << "Centerline displacements:" << std::endl;
+    displacement.print(std::cout);
+
+    std::cout << "Nodal current rotation vectors:" << std::endl;
+    std::vector<Core::LinAlg::Matrix<3, 1, double>> disptheta;
+    disptheta.resize(nnodetriad);
+    extract_rot_vec_dof_values<nnodetriad, nnodecl, vpernode, double>(disp, disptheta);
+    for (unsigned int inode = 0; inode < nnodetriad; ++inode)
+    {
+      std::cout << "Node " << inode << ": ";
+      disptheta[inode].print(std::cout);
+    }
+  }
+
   calc_internal_and_inertia_forces_and_stiff<nnodetriad, nnodecl, vpernode>(
       disp_totlag_centerline, Qnode, stiffmatrix, massmatrix, force, inertia_force);
+
+  {
+    std::cout << "Evaluated element response:" << std::endl;
+    if (force != nullptr)
+    {
+      std::cout << "Internal forces:" << std::endl;
+      force->print(std::cout);
+    }
+
+    if (stiffmatrix != nullptr)
+    {
+      std::cout << "Stiffness matrix:" << std::endl;
+      stiffmatrix->base().print(std::cout);
+    }
+  }
 }
 
 /*----------------------------------------------------------------------------*
